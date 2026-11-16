@@ -1,0 +1,14 @@
+node_modules/
+.tools/
+out/
+cache/
+broadcast/
+.local/
+.env
+.env.*
+!.env.example
+web/public/config.json
+web/dist/
+test-results/
+playwright-report/
+*.log
