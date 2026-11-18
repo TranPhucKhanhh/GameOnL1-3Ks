@@ -1,0 +1,9 @@
+{
+  "name": "Lantern Sea",
+  "short_name": "Lantern Sea",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0d2a3a",
+  "theme_color": "#0d2a3a",
+  "icons": []
+}

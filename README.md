@@ -1,87 +1,58 @@
-# DeFi Farm
+# Lantern Sea
 
-Baseline game nông trại 2D trên Avalanche, sử dụng **Solidity + Foundry** và **TypeScript + viem + Vite**.
+A co-op pirate exploration game on **your own Avalanche L1**, with raid bounties escrowed in **test USDC on Fuji C-Chain** and synced over **Avalanche ICM (Teleporter)**. Built for Team1 Vietnam UniHack 2026.
 
-Mỗi người chơi có 6 ô đất và 3 loại cây. Vòng chơi gồm nhận token test, nạp số dư, trồng cây, chờ cây lớn rồi thu hoạch hoặc nhổ cây để lấy lại tiền gốc.
+Every captain gets a home island, three sailing charges and a sea that nobody has mapped yet.
 
-- Giao diện tiếng Việt, hỗ trợ desktop và mobile.
-- Chạy local bằng hai Anvil và messenger giả lập.
-- Có contract, test và script triển khai cho Fuji + Game L1 qua Teleporter.
-- Sử dụng `dUSD` demo, không có giá trị tiền. Thời gian mỗi vụ được rút ngắn còn 60/120/180 giây trong chế độ demo.
+- **Explore:** each island shows 1–4 sea lanes. You see each lane's direction and cost (⚓1 or ⚓2), but not where it leads. Every island you reach opens new lanes.
+- **Crew lanes:** these cost ⚓4–5, more than one captain can hold, so two captains must pool charges. Then both must solve a 4×4 sliding puzzle within 60 seconds of each other. The first crew to land on a crew island is guaranteed a gem.
+- **Collisions:** the sea is a small hash space on purpose. You will stumble onto other captains' islands and bases.
+- **Captain's log:** the first visitor to an island signs it, and later visitors add notes in order.
+- **Parley:** meet in person and scan each other's QR code. For a while your maps are shared, and you can jump to any of your crewmate's islands for ⚓1.
+- **Ship:** five part slots and two upgradable stats, damage and multiplier. Parts can add damage, add multiplier, or multiply total power.
+- **Boss raids:** a co-op crew leads a time-limited boss raid. They can escrow test USDC on C-Chain as a bounty. Helpers spend charges to attack. If the boss falls, helpers are paid by damage share, and the rest goes back to the crew.
 
-## Yêu cầu
+**No randomness, no sponsor pool, no cash-out.** Rewards depend only on lane cost, daily streak and puzzle speed. Coins and gems are free in-game points: they cannot be bought and never convert to money. The only money in the game is test USDC that one lead crew puts into its own raid.
 
-- Node.js **22.12+**, npm và Git.
-- Foundry: `forge`, `cast`, `anvil`.
-- MetaMask hoặc Core extension để chơi bằng ví test.
+> **Demo time:** local and demo deployments speed up time to one charge per minute and 10-minute bosses (normally 3 charges per 8 hours and daily bosses). Only test tokens are used. This is an educational game, not a financial service.
 
-Các lệnh bên dưới dùng **Windows Command Prompt (CMD)**.
+## Quick start (Windows, local)
 
-## Cài Foundry trên Windows
+Requirements: Node.js 22.12+, Git, and Foundry (`forge`, `cast`, `anvil`). `npm run foundry:install` downloads a checksummed Foundry build into `.tools/`.
 
-1. Mở [Foundry v1.9.0](https://github.com/foundry-rs/foundry/releases/tag/v1.9.0).
-2. Trong **Assets**, tải file `.zip` cho Windows x64, có tên chứa `win32_amd64`.
-3. Giải nén vào thư mục bạn muốn giả sử `D:\project\L1\.tools\foundry`. Các file thực thi phải nằm trực tiếp tại:
-
-   ```text
-   D:\project\L1\.tools\foundry\forge.exe
-   D:\project\L1\.tools\foundry\cast.exe
-   D:\project\L1\.tools\foundry\anvil.exe
-   ```
-4. Đưa đường dẫn thư mục này vào system path trong `edit the system environment variables`
-   ``` text
-   D:\project\L1\.tools\foundry\
-   ```
-4. Kiểm tra phiên bản:
-
-   ```bat
-   cd /d "D:\project\L1"
-   .tools\foundry\forge.exe --version
-   .tools\foundry\cast.exe --version
-   ```
-
-## Cài Foundry trên MacOS hoặc Linux
-   ```bash
-   curl -L https://foundry.paradigm.xyz | bash
-   ```
-
-## Thiết lập và chạy baseline
-
-Thay đường dẫn bên dưới nếu project nằm ở thư mục khác.
-
-```bat
-cd /d "D:\project\L1"
+```powershell
 npm ci
+```
+
+```powershell
 npm run local
 ```
 
-Mở **http://127.0.0.1:5173**. Lệnh `local` tự build contract, khởi động hai Anvil, triển khai contract, nạp quỹ thưởng test và chạy frontend cùng relayer giả lập. Lần đầu cần Internet để tải dependency và compiler Solidity.
+Open **http://127.0.0.1:5173** and choose **Play as a local guest captain**. Each browser tab gets its own throwaway key, so **two tabs means two captains**: enough to try Parley, crew voyages and raids alone. Keep the terminal open, and press `Ctrl+C` to stop. Every start creates fresh local chains.
 
-Để chơi:
+To test on a phone, see [local development](docs/local-development.md#play-on-a-phone).
 
-1. Import [tài khoản Anvil test](docs/local-development.md#kết-nối-ví-local) vào MetaMask hoặc Core.
-2. Kết nối ví trên giao diện, nhận dUSD test và nạp 100 dUSD vào vault.
-3. Chọn hạt giống, trồng ở một ô đất trống và chờ xác nhận.
-4. Thu hoạch khi cây đủ hạn, sau đó rút số dư về ví. Nhổ cây sẽ hoàn gốc và bỏ thưởng.
+## Check everything
 
-Giữ terminal chạy trong lúc chơi. Nhấn `Ctrl+C` để dừng; lần khởi động tiếp theo tạo trạng thái local mới.
-
-## Kiểm tra và build
-
-```bat
+```powershell
 npm run check
 ```
 
-Lệnh này chạy test Foundry, đồng bộ ABI và build frontend vào `web/dist`. Xem [hướng dẫn test](docs/testing.md) để chạy integration, test deploy và test giao diện.
+```powershell
+npm run test:e2e
+```
 
-## Tài liệu chi tiết
+```powershell
+npm run test:ui
+```
 
-- [Chơi và phát triển local](docs/local-development.md): ví test, RPC, cách chơi và reset.
-- [Test, build và CI](docs/testing.md).
-- [Kiến trúc và cơ chế game](docs/architecture.md).
-- [Triển khai Fuji + Game L1 qua ICM](docs/deployment.md).
-- [Xử lý lỗi thường gặp](docs/troubleshooting.md).
-- [Thông tin cuộc thi và checklist nộp bài](docs/competition.md).
-- [Nguồn tham khảo](docs/references.md).
+These run the 23 Foundry contract tests, the frontend build, an end-to-end test on two local chains with a simulated ICM relay, and a two-captain browser test at phone size. See [testing](docs/testing.md).
 
-Baseline đã được kiểm tra ở chế độ local. Triển khai Fuji + Game L1 và kiểm chứng ICM thật thực hiện theo tài liệu triển khai riêng.
+## Docs
+
+- [Architecture and game rules](docs/architecture.md)
+- [Local development and phone testing](docs/local-development.md)
+- [Deploy to Fuji and your own L1 with ICM](docs/deployment.md)
+- [Testing](docs/testing.md) · [Troubleshooting](docs/troubleshooting.md)
+- [Hackathon rules check and pitch notes](docs/competition.md)
+- [References](docs/references.md)

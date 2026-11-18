@@ -14,3 +14,6 @@ runs = 256
 
 [fmt]
 line_length = 110
+
+[lint]
+lint_on_build = false

@@ -1,88 +1,111 @@
-# Kiến trúc và cơ chế DeFi Farm
+# Architecture and game rules
 
-[← Về README](../README.md)
+[← README](../README.md)
 
-## Cơ chế game
-
-Mỗi địa chỉ ví có 6 ô đất. Người chơi nhận `dUSD`, cho phép vault dùng đúng lượng cần nạp, nạp số dư trên chuỗi vault rồi trồng trên Game L1. Vault nhận thông điệp, kiểm tra tiền và quỹ thưởng, giữ khoản gốc rồi xác nhận về game. Cây chỉ chuyển sang đang lớn sau xác nhận.
-
-| Cây | Demo | Kỳ hạn thường | Thưởng cố định mỗi vụ |
-| --- | ---: | ---: | ---: |
-| Cà rốt | 60 giây | 7 ngày | 1% gốc |
-| Lúa | 120 giây | 30 ngày | 3% gốc |
-| Táo | 180 giây | 90 ngày | 8% gốc |
-
-**Các tỷ lệ là tham số mô phỏng theo kỳ, không phải APY và không phải cam kết đầu tư.** `demoMode` được cố định lúc triển khai vault, không có nút admin đổi đồng hồ của contract. Đổi mode phải triển khai vault mới.
-
-- **Thu hoạch khi đủ hạn:** gốc + thưởng chuyển vào `credits` của chính người chơi trên vault; sau đó nhấn Rút để chuyển token về ví.
-- **Nhổ cây:** hoàn 100% gốc vào `credits`, bỏ toàn bộ thưởng; quỹ thưởng được giải phóng. Nhổ cây sau hạn cũng bỏ thưởng, nên muốn nhận thưởng hãy chọn Thu hoạch.
-- **Thiếu số dư hoặc quỹ thưởng:** vault gửi kết quả từ chối, ô đất được giải phóng sau xác nhận. Không tự tạo token để bù.
-- **Thu hoạch sớm:** vault từ chối, ô trở lại đang lớn và có thể thử lại.
-- **ICM chậm:** ô giữ trạng thái pending. Không tự giả định thành công khi mới có transaction trên Game L1.
-
-`dUSD` là ERC-20 **demo**, decimals = 6, **không phải Circle USDC**, không có giá trị tiền. Faucet cấp 1.000 dUSD/địa chỉ/giờ. Khi triển khai token, ví deployer nhận 1.000.000 dUSD test để nạp quỹ. UI hiện chỉ dành cho token này.
-
-## Kiến trúc và nguồn tiền
+## Two chains, one message bus
 
 ```mermaid
-sequenceDiagram
-    actor Player as Ví người chơi
-    participant Farm as Farm · Game L1
-    participant ICM as Teleporter / messenger
-    participant Vault as TierVault · C-Chain
-    Player->>Vault: approve + deposit dUSD (tạo credits)
-    Player->>Farm: plant(slot, tier, amount)
-    Farm->>ICM: Request, ô chuyển PlantPending
-    ICM->>Vault: Xác thực nguồn và xử lý yêu cầu
-    Vault->>Vault: credits → principal; dự trữ thưởng
-    Vault->>ICM: Reply (thành công hoặc lý do từ chối)
-    ICM->>Farm: ACK, chuyển Growing hoặc Empty
-    Player->>Farm: harvest hoặc uproot
-    Farm->>ICM: Request
-    ICM->>Vault: Đóng vị thế, ghi credits cho player
-    Vault->>ICM: Reply
-    ICM->>Farm: Đóng ô đất sau ACK
-    Player->>Vault: withdraw credits về ví
+flowchart LR
+  subgraph L1["Game L1 (own Avalanche L1, gas token TIDE)"]
+    Sea[LanternSea\ncaptains · charges · sea graph · notes · coins/gems · Parley]
+    Coop[CoopSail\ncrew voyages + sliding puzzle check]
+    Yard[Shipyard\nparts · upgrades · power]
+    Raid[BossRaid\nboss schedule · damage · ICM endpoint]
+  end
+  subgraph C["Fuji C-Chain"]
+    Escrow[RaidEscrow\nper-raid test-USDC bounty · ICM endpoint]
+    USDC[(Circle test USDC)]
+  end
+  Coop --> Sea
+  Yard --> Sea
+  Raid --> Sea
+  Raid --> Yard
+  Raid <-- "Teleporter / ICM" --> Escrow
+  Escrow --> USDC
 ```
 
-ICM truyền **thông điệp**, không bridge dUSD qua lại. Người dùng nạp trước ở C-Chain; yêu cầu từ Game L1 chỉ tiêu thụ credits của đúng người gửi. Đây là lựa chọn đơn giản hóa baseline: trồng cần bước nạp trước thay vì một thao tác xuyên hai chuỗi.
+Frequent game actions (sailing, notes, puzzles, attacks, Parley) happen on the **Game L1**, where gas is a free native token. **Money stays on C-Chain.** ICM carries only messages:
 
-`fundRewards` nạp token có sẵn vào quỹ sponsor. Khi trồng, vault dự trữ đủ thưởng ngay. Ví dụ 100 dUSD loại rau cần 1 dUSD dự trữ. Không đủ thưởng thì từ chối trồng. Khi thu hoạch, token thưởng đến từ phần đã nạp này, không đến từ tiền gốc người khác.
+| Message | Direction | When | Effect |
+| --- | --- | --- | --- |
+| `RAID_OPENED` | L1 → C-Chain | Partner accepts the raid lead | Escrow registers the raid, its two funders and its deadline |
+| `BOUNTY_FUNDED` | C-Chain → L1 | A lead captain escrows USDC | L1 shows the bounty to helpers |
+| `RAID_SETTLED` | L1 → C-Chain | Anyone settles a finished raid | Escrow credits helpers by damage share and refunds the rest |
 
-Quan hệ kế toán, khi không có ai gửi token trực tiếp ngoài API vault:
+Both endpoints check the messenger, the source blockchain ID and the peer contract. Peers can be bound only once, and nobody has an admin path to move funds.
 
-```text
-token.balanceOf(vault)
-  = totalCredits + totalPrincipal + availableRewards + reservedRewards
-```
+## Contracts
 
-Gửi token thẳng vào địa chỉ vault không tạo credits; dùng `deposit` hoặc `fundRewards`. Token gửi nhầm không có hàm admin cứu hộ trong baseline.
+| File | Chain | Role |
+| --- | --- | --- |
+| `src/game/LanternSea.sol` | L1 | Core: registration, charges, hashed sea graph, island claims, captain's log, coins/gems, Parley signatures. Modules are wired once with `setModules`. |
+| `src/game/CoopSail.sol` | L1 | Crew voyages: propose → join (both pay charges) → both submit puzzle moves within the window. The contract replays the moves. |
+| `src/game/Shipyard.sol` | L1 | A fixed catalogue of 15 parts in 5 slots, plus damage and multiplier upgrades paid in coins. |
+| `src/game/BossRaid.sol` | L1 | Boss per epoch, lead-crew proposal/accept, attacks, settlement, ICM sender/receiver. |
+| `src/escrow/RaidEscrow.sol` | C-Chain | Per-raid bounty from the two lead captains, pull-based claims, timeout refund. |
+| `src/lib/SlidePuzzle.sol` | — | 4×4 board in a `uint64`, deterministic scramble, move replay. |
+| `src/lib/SeaMessages.sol` | — | ICM message kinds. |
+| `src/mocks/*` | local only | `MockTeleporter` (no Warp security) and `MockUSDC` (local test token). Never deploy these publicly. |
 
-Các điểm bảo vệ đã có: xác thực messenger + blockchain ID nguồn + peer contract; peer chỉ gắn một lần; chống xử lý lại request; ACK phải khớp request đang chờ; chặn trồng/thu hoạch lặp khi pending; deposit/withdraw/receive có chặn tái nhập. Configurator chỉ gắn peer một lần, không được rút tiền người chơi hoặc sửa kỳ hạn. Giới hạn mỗi lần trồng: 1–1.000 dUSD.
+## Rules in numbers
 
-## Cấu trúc và chỗ mở rộng
+| Rule | Normal | Demo (`DEMO_MODE=true`) |
+| --- | --- | --- |
+| Sailing charges | max 3, +1 every 160 min (full in 8 h) | +1 per minute |
+| Streak "day" | 24 h | 5 min |
+| Parley length | 1 h, once per pair per day | 10 min |
+| Crew puzzle window | 60 s | 60 s |
+| Boss epoch | 1 day | 10 min |
+| Escrow refund grace | 3 days after the raid deadline | 10 min |
 
-```text
-src/Farm.sol                    Game L1: 6 ô, request, pending và ACK
-src/TierVault.sol               C-Chain: credits, vị thế, quỹ thưởng, hoàn gốc
-src/CrossChainEndpoint.sol       ABI Teleporter, xác thực, gắn peer một lần
-src/FarmTypes.sol                Kiểu request/reply và trạng thái chung
-src/DemoUSD.sol                  ERC-20 demo và faucet test
-src/mocks/MockTeleporter.sol     Chỉ dùng local/test, không có bảo mật Warp
-script/Deploy.s.sol              Forge scripts cho Fuji và Game L1
-test/Farm.t.sol                  Unit/fuzz và kế toán
-test/FujiSmoke.t.sol             Kiểm tra deployment trên RPC fork, opt-in
-test/browser/farm.spec.mjs       Test trình duyệt và ví local giả lập
-scripts/local*.mjs               Hai Anvil, deploy local, relay, cleanup
-scripts/config-testnet.mjs       Kiểm tra cấu hình public rồi xuất cho UI
-web/src/main.ts                 Frontend viem + TypeScript
-web/src/style.css               Giao diện responsive, pixel SVG tự vẽ
-web/src/generated/              ABI sinh từ Foundry, sync sau khi sửa contract
-.github/workflows/ci.yml         Unit, integration, build và browser CI
-```
+The demo flag is fixed when the contracts are deployed. There is no admin clock.
 
-Đổi loại cây/thưởng/kỳ hạn: sửa `tierConfig` trong TierVault, cập nhật mô tả UI, viết test cho quy tắc mới và đồng bộ ABI nếu signature thay đổi. Tăng số ô: sửa cả Farm, kiểm tra slot ở vault và frontend. Không chỉ đổi giao diện mà giữ quy tắc contract cũ.
+**Sea graph.** Island IDs run from 0 to `mapSize - 1` (256 in the demo, drawn as a 16×16 grid):
+- Lane count = `1 + keccak(seed, island, "lanes") % 4`.
+- Lane `d` goes to `keccak(seed, island, d) % mapSize`, so destinations collide on purpose.
+- Lane cost is 1 (60%), 2 (30%) or crew 4–5 (10%).
+- Home = `keccak(seed, captain) % mapSize`.
+- The browser recomputes the same hashes in `web/src/world.js`, and the e2e test checks it against the contract.
 
-## Giới hạn hiện tại
+**Rewards (deterministic):**
 
-Giới hạn cần biết trước khi mở rộng: chưa audit; mock ERC-20 không hỗ trợ fee-on-transfer/rebase; chưa có emergency exit nếu L1/relayer ngừng vĩnh viễn; các vị thế đang mở cần thông điệp đúng để đóng; chỉ credits chưa khóa rút trực tiếp được ở vault. Chưa có messenger upgrade, nhắc việc, anti-sybil, embedded wallet, indexer, quản trị multisig hoặc lending adapter. Quỹ thưởng hiện chỉ là sponsor-funded test budget, không phải Aave/Benqi và không tạo lợi suất thực.
+| Landing | Coins | Extra |
+| --- | --- | --- |
+| ⚓1 lane | 10–20 | |
+| ⚓2 lane | 25–40 | |
+| Crew lane | 60–100 | One gem for each captain |
+
+- On solo lanes, the position inside the range is `min(streak, 5) / 5`. On crew lanes it is puzzle speed: the slower captain's time against the 60-second window.
+- An island that is already claimed pays nothing, but you can still visit it, read and sign its log, and sail its lanes.
+- The hash decides only geography. Rewards never come from the hash.
+
+**Coins and gems** are internal counters, not tokens:
+- Coins buy ship parts and upgrades.
+- Gems sell to the harbour for fixed coin prices: Pearl 50, Emerald 80, Sapphire 120, Ruby 200.
+- Nothing converts to money.
+
+**Ship power:**
+- Power = damage × mult × (product of the × parts).
+- A lead crew attacks with combined power: (dmgA + dmgB) × (multA + multB) × xA × xB.
+- Base power is 10 for one ship and 40 for a crew.
+
+**Bosses:** the island is `keccak(seed, "boss", epoch)`, and HP cycles 1500 / 2500 / 4000 / 6000. The lead crew earns HP ÷ 5 coins when the boss falls.
+
+## Money flow (raid bounty)
+
+1. Two captains form the lead crew on L1. `RAID_OPENED` reaches the escrow.
+2. Each lead captain may `fund` the escrow with test USDC, up to 100 per raid. `BOUNTY_FUNDED` updates L1.
+3. Helpers attack, spending 1 charge per attack. Damage is recorded per address, with up to 20 helpers.
+4. Anyone calls `settle` when the boss falls or the epoch ends. `RAID_SETTLED` reaches the escrow:
+   - **Boss defeated:** each helper gets `bounty × helperDamage / totalDamage`. The rest goes back to the two funders in proportion to what each put in.
+   - **Boss survived:** both funders get a full refund.
+5. Payouts are credited, and each person calls `claim()`. If no settle message arrives, `refundExpired` returns deposits after the grace period.
+
+Accounting invariant, checked in tests: `USDC.balanceOf(escrow) == totalEscrowed + totalClaimable`.
+
+## Known limits (state these honestly)
+
+- **Parley proximity:** the QR proves the code is at most 2 minutes old, not that the phones are in the same place. A screenshot sent remotely works. Bluetooth/NFC or location checks would be next.
+- **Puzzle:** the scramble comes from public on-chain data, so a bot can compute a solution. The puzzle proves that two captains coordinated within the time window, not that they solved it by hand.
+- **Escrow:** each raid's escrow holds money from two people, the lead crew. Confirm with the organizers that this per-raid escrow is acceptable under the "pooled funds behind a multisig" rule. The escrow has no admin keys and always refunds.
+- **Not audited.** Test tokens only. Event history is read with `getLogs` from block 0, which may need an indexer on a long-lived chain.
