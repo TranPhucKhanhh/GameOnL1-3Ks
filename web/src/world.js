@@ -52,6 +52,20 @@ export function islandShape(seed, island) {
   return cells;
 }
 
+/** Cartoon island outline: 4-6 overlapping circles placed by the island's hash, plus a decoration kind. */
+export function islandBlobs(seed, island) {
+  const h = enc(['bytes32', 'uint16', 'string'], [seed, island, 'shape']);
+  const bits = (i, n) => Number((h >> BigInt(i)) & ((1n << BigInt(n)) - 1n));
+  const count = 4 + bits(0, 2) % 3;
+  const blobs = [{ x: 0, y: 0, r: 22 + bits(2, 3) }];
+  for (let i = 1; i < count; i++) {
+    const ang = (bits(8 + i * 10, 6) / 64) * Math.PI * 2;
+    const dist = 10 + bits(14 + i * 10, 4);
+    blobs.push({ x: Math.cos(ang) * dist, y: Math.sin(ang) * dist * 0.7, r: 12 + bits(18 + i * 10, 4) });
+  }
+  return { blobs, deco: bits(80, 2) }; // 0 palm, 1 two palms, 2 rocks, 3 palm + bush
+}
+
 const ADJ = ['Lantern', 'Coral', 'Misty', 'Saltwind', 'Amber', 'Hollow', 'Moonlit', 'Driftwood', 'Sapphire', 'Gull', 'Ember', 'Kelp', 'Thunder', 'Pearl', 'Lonely', 'Whistling'];
 const NOUN = ['Cay', 'Reef', 'Atoll', 'Isle', 'Rock', 'Key', 'Haven', 'Shoal', 'Cove', 'Spit', 'Bluff', 'Lagoon'];
 export function islandName(island) {
@@ -89,4 +103,34 @@ export function moveForTap(cells, cell) {
   if (cell === blank - 1 && blank % 4 !== 0) return 2;
   if (cell === blank + 1 && blank % 4 !== 3) return 3;
   return -1;
+}
+
+// ---------------------------------------------------------------- island interior (mirrors LanternSea.isLand)
+export const GRID = 9;
+export const CENTER_TILE = 40;
+export const NOTE_COST = 25;
+
+/** Is interior tile 0..80 land? 8 radial sectors with hash radii; the 3x3 centre is always land. */
+export function isLand(seed, island, tile) {
+  if (tile < 0 || tile >= GRID * GRID) return false;
+  const x = (tile % GRID) - 4, y = Math.floor(tile / GRID) - 4;
+  const d2 = x * x + y * y;
+  if (d2 <= 2) return true;
+  const ax = Math.abs(x), ay = Math.abs(y);
+  const sector = y >= 0 ? (x >= 0 ? (ax >= ay ? 0 : 1) : (ax >= ay ? 3 : 2)) : (x < 0 ? (ax >= ay ? 4 : 5) : (ax >= ay ? 7 : 6));
+  const h = enc(['bytes32', 'uint16', 'string'], [seed, island, 'land']);
+  const r2 = 5 + Number((h >> BigInt(sector * 8)) & 0xFFn) % 12;
+  return d2 <= r2;
+}
+
+/** Scenery for a free land tile, from the island hash: 0 none, 1 palm, 2 rock, 3 bush, 4 flowers. Cosmetic only. */
+export function tileDeco(seed, island, tile) {
+  const h = enc(['bytes32', 'uint16', 'string', 'uint8'], [seed, island, 'deco', tile]);
+  const v = Number(h % 20n);
+  return v < 3 ? 1 : v < 5 ? 2 : v < 7 ? 3 : v < 9 ? 4 : 0;
+}
+
+/** Cosmetic island theme from the hash: 0 Tropical, 1 Jungle, 2 Volcanic, 3 Crystal. */
+export function islandTheme(seed, island) {
+  return Number(enc(['bytes32', 'uint16', 'string'], [seed, island, 'theme']) % 4n);
 }

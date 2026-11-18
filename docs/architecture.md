@@ -77,6 +77,13 @@ The demo flag is fixed when the contracts are deployed. There is no admin clock.
 
 - On solo lanes, the position inside the range is `min(streak, 5) / 5`. On crew lanes it is puzzle speed: the slower captain's time against the 60-second window.
 - An island that is already claimed pays nothing, but you can still visit it, read and sign its log, and sail its lanes.
+
+**Island interior and note poles.** Tapping an island on the map takes you ashore:
+- The interior is a 9×9 tile grid. `LanternSea.isLand(island, tile)` decides which tiles are land, using 8 radial sectors with hash-chosen radii. The 3×3 centre is always land, and `web/src/world.js` mirrors the check exactly (the e2e test compares them).
+- Each island has a hash-chosen theme (Tropical, Jungle, Volcanic or Crystal) with matching scenery: swaying palms, crabs, shells, campfires, a smoking volcano or sparkling crystals, gulls and drifting clouds. The theme and scenery are cosmetic only.
+- Sailing or a Parley jump plays a voyage on the sea map: the ship follows the lane with a wake, the camera follows it, the new island pops out of the fog, and then you go ashore. If the page is in the background, the voyage finishes instantly.
+- Each sea lane shows as a dock on the shore, pointing the way it sails.
+- A note is a **pole** that costs `NOTE_COST` = 25 coins, which are in-game points, never money. The first pole on an island must stand on the centre tile (40). Every later pole goes on a free land tile the captain picks. Each captain can build one pole per island, and the contract checks the tile is land and free.
 - The hash decides only geography. Rewards never come from the hash.
 
 **Coins and gems** are internal counters, not tokens:
