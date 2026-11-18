@@ -23,17 +23,54 @@
         "internalType": "address"
       },
       {
-        "name": "demoMode_",
-        "type": "bool",
-        "internalType": "bool"
+        "name": "maxBounty_",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "grace_",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "stateMutability": "nonpayable"
   },
   {
     "type": "function",
-    "name": "availableRewards",
+    "name": "bountyOf",
+    "inputs": [
+      {
+        "name": "raidId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "claim",
     "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "claimable",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
     "outputs": [
       {
         "name": "",
@@ -58,61 +95,47 @@
   },
   {
     "type": "function",
-    "name": "credits",
+    "name": "fund",
     "inputs": [
       {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
+        "name": "raidId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
       {
-        "name": "",
+        "name": "amount",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "view"
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
-    "name": "demoMode",
+    "name": "grace",
     "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "bool",
-        "internalType": "bool"
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "stateMutability": "view"
   },
   {
     "type": "function",
-    "name": "deposit",
-    "inputs": [
+    "name": "maxBounty",
+    "inputs": [],
+    "outputs": [
       {
-        "name": "amount",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "fundRewards",
-    "inputs": [
-      {
-        "name": "amount",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -155,58 +178,44 @@
   },
   {
     "type": "function",
-    "name": "positions",
+    "name": "raids",
     "inputs": [
       {
         "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "leadA",
         "type": "address",
         "internalType": "address"
       },
       {
-        "name": "",
+        "name": "leadB",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "status",
         "type": "uint8",
-        "internalType": "uint8"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "principal",
-        "type": "uint256",
-        "internalType": "uint256"
+        "internalType": "enum RaidEscrow.Status"
       },
       {
-        "name": "reward",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "plantedAt",
+        "name": "deadline",
         "type": "uint64",
         "internalType": "uint64"
       },
       {
-        "name": "unlockAt",
-        "type": "uint64",
-        "internalType": "uint64"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "processed",
-    "inputs": [
-      {
-        "name": "",
+        "name": "fundedA",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "outputs": [
+      },
       {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
+        "name": "fundedB",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -216,12 +225,12 @@
     "name": "receiveTeleporterMessage",
     "inputs": [
       {
-        "name": "source",
+        "name": "sourceBlockchainID",
         "type": "bytes32",
         "internalType": "bytes32"
       },
       {
-        "name": "sender",
+        "name": "originSenderAddress",
         "type": "address",
         "internalType": "address"
       },
@@ -236,16 +245,16 @@
   },
   {
     "type": "function",
-    "name": "reservedRewards",
-    "inputs": [],
-    "outputs": [
+    "name": "refundExpired",
+    "inputs": [
       {
-        "name": "",
+        "name": "raidId",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "view"
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -262,44 +271,20 @@
   },
   {
     "type": "function",
-    "name": "tierConfig",
-    "inputs": [
-      {
-        "name": "tier",
-        "type": "uint8",
-        "internalType": "uint8"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "duration",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "rewardBps",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "token",
     "inputs": [],
     "outputs": [
       {
         "name": "",
         "type": "address",
-        "internalType": "contract IERC20"
+        "internalType": "contract IERC20Min"
       }
     ],
     "stateMutability": "view"
   },
   {
     "type": "function",
-    "name": "totalCredits",
+    "name": "totalClaimable",
     "inputs": [],
     "outputs": [
       {
@@ -312,7 +297,7 @@
   },
   {
     "type": "function",
-    "name": "totalPrincipal",
+    "name": "totalEscrowed",
     "inputs": [],
     "outputs": [
       {
@@ -322,26 +307,13 @@
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "withdraw",
-    "inputs": [
-      {
-        "name": "amount",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "event",
-    "name": "Deposited",
+    "name": "Claimed",
     "inputs": [
       {
-        "name": "player",
+        "name": "to",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -351,6 +323,68 @@
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Funded",
+    "inputs": [
+      {
+        "name": "raidId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "funder",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "total",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Paid",
+    "inputs": [
+      {
+        "name": "raidId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "to",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "helper",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
       }
     ],
     "anonymous": false
@@ -370,78 +404,58 @@
   },
   {
     "type": "event",
-    "name": "RequestProcessed",
+    "name": "RaidClosed",
     "inputs": [
       {
-        "name": "id",
+        "name": "raidId",
         "type": "uint256",
         "indexed": true,
         "internalType": "uint256"
       },
       {
-        "name": "player",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "slot",
+        "name": "status",
         "type": "uint8",
         "indexed": false,
-        "internalType": "uint8"
-      },
-      {
-        "name": "action",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "enum FarmTypes.Action"
-      },
-      {
-        "name": "result",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "enum FarmTypes.Result"
+        "internalType": "enum RaidEscrow.Status"
       }
     ],
     "anonymous": false
   },
   {
     "type": "event",
-    "name": "RewardsFunded",
+    "name": "RaidRegistered",
     "inputs": [
       {
-        "name": "sponsor",
-        "type": "address",
+        "name": "raidId",
+        "type": "uint256",
         "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "leadA",
+        "type": "address",
+        "indexed": false,
         "internalType": "address"
       },
       {
-        "name": "amount",
-        "type": "uint256",
+        "name": "leadB",
+        "type": "address",
         "indexed": false,
-        "internalType": "uint256"
+        "internalType": "address"
+      },
+      {
+        "name": "deadline",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
       }
     ],
     "anonymous": false
   },
   {
-    "type": "event",
-    "name": "Withdrawn",
-    "inputs": [
-      {
-        "name": "player",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
+    "type": "error",
+    "name": "BadAmount",
+    "inputs": []
   },
   {
     "type": "error",
@@ -450,7 +464,12 @@
   },
   {
     "type": "error",
-    "name": "InvalidRequest",
+    "name": "BadMessage",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotLead",
     "inputs": []
   },
   {
@@ -460,17 +479,32 @@
   },
   {
     "type": "error",
-    "name": "Reentrant",
+    "name": "Reentrancy",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "Replay",
+    "name": "TooEarly",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooLate",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TransferFailed",
     "inputs": []
   },
   {
     "type": "error",
     "name": "Unauthorized",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "WrongStatus",
     "inputs": []
   }
 ]

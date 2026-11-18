@@ -4,8 +4,9 @@ import { execFileSync } from 'node:child_process';
 import { keccak256, toHex, parseAbiItem } from 'viem';
 import { artifact, clients, run, start, waitRpc, write } from './lib.mjs';
 
-export const gameID = keccak256(toHex('farm-local-game'));
-export const vaultID = keccak256(toHex('farm-local-vault'));
+export const gameID = keccak256(toHex('lantern-local-game'));
+export const vaultID = keccak256(toHex('lantern-local-cchain'));
+export const worldSeed = keccak256(toHex('lantern-sea-demo-world-v1'));
 const event = parseAbiItem('event MessageQueued(bytes32 indexed messageId, bytes32 indexed destinationBlockchainID, address destinationAddress, address sender, bytes message)');
 
 async function assertFree(port) {
@@ -31,11 +32,11 @@ export async function startLocal({ gameChainId = 31337, vaultChainId = 31338, pe
     await Promise.all([waitRpc('http://127.0.0.1:8545'), waitRpc('http://127.0.0.1:9545')]);
     const config = {
       mode: 'local',
-      game: { chainId: gameChainId, name: 'Farm Game (Anvil)', symbol: 'GAME', rpcUrl: 'http://127.0.0.1:8545', blockchainId: gameID },
-      vault: { chainId: vaultChainId, name: 'Farm Vault (Anvil)', symbol: 'AVAX', rpcUrl: 'http://127.0.0.1:9545', blockchainId: vaultID }
+      demoMode: true,
+      game: { chainId: gameChainId, name: 'Lantern Sea L1 (Anvil)', symbol: 'TIDE', rpcUrl: 'http://127.0.0.1:8545', blockchainId: gameID },
+      vault: { chainId: vaultChainId, name: 'C-Chain stand-in (Anvil)', symbol: 'AVAX', rpcUrl: 'http://127.0.0.1:9545', blockchainId: vaultID }
     };
     const game = clients(config.game);
-    const vault = clients(config.vault);
     const accounts = await game.public.request({ method: 'eth_accounts' });
     const deployer = accounts[0];
     const gc = clients(config.game, deployer);
@@ -49,24 +50,31 @@ export async function startLocal({ gameChainId = 31337, vaultChainId = 31338, pe
     }
     config.game.messenger = await deploy(gc, 'MockTeleporter', [gameID]);
     config.vault.messenger = await deploy(vc, 'MockTeleporter', [vaultID]);
-    config.token = await deploy(vc, 'DemoUSD', []);
-    config.farm = await deploy(gc, 'Farm', [config.game.messenger, vaultID, deployer]);
-    config.tierVault = await deploy(vc, 'TierVault', [config.token, config.vault.messenger, gameID, deployer, true]);
-    await write(gc, config.farm, artifact('Farm').abi, 'setPeer', [config.tierVault]);
-    await write(vc, config.tierVault, artifact('TierVault').abi, 'setPeer', [config.farm]);
-    await write(vc, config.token, artifact('DemoUSD').abi, 'approve', [config.tierVault, 10_000_000000n]);
-    await write(vc, config.tierVault, artifact('TierVault').abi, 'fundRewards', [10_000_000000n]);
+    config.usdc = await deploy(vc, 'MockUSDC', []);
+    config.sea = await deploy(gc, 'LanternSea', [worldSeed, 256, true, deployer]);
+    config.shipyard = await deploy(gc, 'Shipyard', [config.sea]);
+    config.coop = await deploy(gc, 'CoopSail', [config.sea, 60, 14]);
+    config.raid = await deploy(gc, 'BossRaid', [config.sea, config.shipyard, config.game.messenger, vaultID, deployer]);
+    config.escrow = await deploy(vc, 'RaidEscrow', [config.usdc, config.vault.messenger, gameID, deployer, 100_000000n, 600]);
+    await write(gc, config.sea, artifact('LanternSea').abi, 'setModules', [config.coop, config.shipyard, config.raid]);
+    await write(gc, config.raid, artifact('BossRaid').abi, 'setPeer', [config.escrow]);
+    await write(vc, config.escrow, artifact('RaidEscrow').abi, 'setPeer', [config.raid]);
     if (persistConfig) {
       await mkdir('.local', { recursive: true });
       await mkdir('web/public', { recursive: true });
       await writeFile('.local/config.json', JSON.stringify(config, null, 2) + '\n');
-      await writeFile('web/public/config.json', JSON.stringify(config, null, 2) + '\n');
+      // The browser reaches both Anvil nodes through Vite's same-origin proxy (web/vite.config.ts),
+      // so a phone opening the dev server through a tunnel or LAN address needs only one port.
+      const browserConfig = structuredClone(config);
+      browserConfig.game.rpcUrl = '/rpc/game';
+      browserConfig.vault.rpcUrl = '/rpc/cchain';
+      await writeFile('web/public/config.json', JSON.stringify(browserConfig, null, 2) + '\n');
     }
     const routes = [
       { source: gc, destination: vc, sourceID: gameID, destinationID: vaultID, messenger: config.game.messenger,
-        destinationMessenger: config.vault.messenger, sender: config.farm, receiver: config.tierVault, cursor: 0n, queue: [] },
+        destinationMessenger: config.vault.messenger, sender: config.raid, receiver: config.escrow, cursor: 0n, queue: [] },
       { source: vc, destination: gc, sourceID: vaultID, destinationID: gameID, messenger: config.vault.messenger,
-        destinationMessenger: config.game.messenger, sender: config.tierVault, receiver: config.farm, cursor: 0n, queue: [] }
+        destinationMessenger: config.game.messenger, sender: config.escrow, receiver: config.raid, cursor: 0n, queue: [] }
     ];
     const abi = artifact('MockTeleporter').abi;
     let busy = false;
