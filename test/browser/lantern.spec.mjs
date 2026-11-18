@@ -26,7 +26,7 @@ const tab = (page, name) => page.locator('.tabs button', { hasText: name }).clic
 const act = (page, text) => page.locator('#sheet button, .modal button', { hasText: text }).first().click();
 
 test('two captains: parley, co-op puzzle voyage and raid bounty on phones', async ({ browser }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
   const cfg = config();
   const game = createPublicClient({ transport: http(cfg.game.rpcUrl) });
   const seed = await game.readContract({ address: cfg.sea, abi: seaAbi, functionName: 'worldSeed' });
@@ -93,6 +93,32 @@ test('two captains: parley, co-op puzzle voyage and raid bounty on phones', asyn
   await tab(A.page, 'Crew');
   await expect(A.page.locator('#sheet')).toContainText('Landed', { timeout: 20_000 });
 
+  // Go ashore on A's home and build the first note pole (it must stand in the centre and cost coins).
+  await tab(A.page, 'Sea');
+  await A.page.locator('#sheet button', { hasText: 'Go ashore' }).click();
+  await expect(A.page.locator('.backsea')).toBeVisible();
+  await A.page.fill('#note', 'First lantern lit on Pearl Bluff!');
+  const coinsBefore = Number((await A.page.locator('.meter.coin').innerText()).replace(/\D/g, ''));
+  await act(A.page, 'Build note pole');
+  await expect(A.page.locator('#sheet .notes')).toContainText('Pole #1 · centre', { timeout: 20_000 });
+  await expect(A.page.locator('.meter.coin')).toHaveText(String(coinsBefore - 25), { timeout: 20_000 });
+  await A.page.screenshot({ path: 'test-results/lantern-phone-island.png' });
+  // Sail a solo lane from the island: the ship animates across the sea, then we land on the new island.
+  const sailBtn = A.page.locator('#sheet button.go', { hasText: 'Set sail' }).first();
+  await expect(sailBtn).toBeEnabled({ timeout: 70_000 }); // a charge refills within a demo minute
+  const fromName = await A.page.locator('#sheet h2').first().innerText();
+  await A.page.bringToFront(); // canvas animations only run in the foreground page
+  await sailBtn.click();
+  await expect(A.page.locator('.backsea')).toBeHidden({ timeout: 20_000 }); // back on the sea for the voyage
+  await A.page.waitForTimeout(900);
+  await A.page.screenshot({ path: 'test-results/lantern-phone-sailing.png' });
+  await expect(A.page.locator('.backsea')).toBeVisible({ timeout: 20_000 }); // ashore on arrival
+  await expect(A.page.locator('#sheet h2').first()).not.toHaveText(fromName);
+  await A.page.waitForTimeout(1500);
+  await A.page.screenshot({ path: 'test-results/lantern-phone-island2.png' });
+  await A.page.locator('.backsea').click();
+  await expect(A.page.locator('.backsea')).toBeHidden();
+
   // Raid: A proposes, B accepts, A escrows a bounty on the C-Chain stand-in, B attacks.
   await tab(A.page, 'Raid');
   await A.page.fill('#lead-partner', B.address);
@@ -117,5 +143,7 @@ test('two captains: parley, co-op puzzle voyage and raid bounty on phones', asyn
   await d.goto(`/?captain=${A.address}`);
   await expect(d.locator('#sheet')).toContainText('Treasure cabinet', { timeout: 20_000 });
   await d.screenshot({ path: 'test-results/lantern-desktop-cabinet.png' });
+  // Nothing may sit on top of the map on desktop (regression: an empty overlay box used to block drag and zoom).
+  expect(await d.evaluate(() => document.elementFromPoint(400, 450)?.tagName)).toBe('CANVAS');
   expect([...A.errors, ...B.errors]).toEqual([]);
 });

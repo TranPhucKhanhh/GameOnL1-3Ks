@@ -22,6 +22,12 @@ contract LanternSea {
     uint256 public constant COOP_SPAN = 40;
     uint256 public constant STREAK_CAP = 5;
 
+    /// Island interior: a 9x9 tile grid. Tile 40 (the centre) holds the island's first note pole.
+    uint8 public constant ISLAND_GRID = 9;
+    uint8 public constant CENTER_TILE = 40;
+    /// Building a note pole costs free in-game coins (never real money).
+    uint256 public constant NOTE_COST = 25;
+
     bool public immutable demoMode;
     uint16 public immutable mapSize;
     bytes32 public immutable worldSeed;
@@ -51,6 +57,7 @@ contract LanternSea {
     struct Note {
         address author;
         uint64 at;
+        uint8 tile;
         string text;
     }
 
@@ -62,6 +69,7 @@ contract LanternSea {
     mapping(uint16 => address[]) internal homesAt;
     mapping(uint16 => Note[]) internal notes;
     mapping(address => mapping(uint16 => bool)) public hasNoted;
+    mapping(uint16 => mapping(uint8 => bool)) public tileTaken;
     mapping(bytes32 => uint64) public parleyUntil;
     mapping(bytes32 => uint64) public parleyDay;
 
@@ -72,7 +80,7 @@ contract LanternSea {
     event IslandDiscovered(uint16 indexed island, address indexed captain, uint256 coins);
     event IslandRevisited(uint16 indexed island, address indexed captain, address firstFinder);
     event GemFound(address indexed captain, uint8 gemType, uint16 island);
-    event NoteLeft(uint16 indexed island, address indexed author, uint256 index);
+    event NoteLeft(uint16 indexed island, address indexed author, uint256 index, uint8 tile);
     event ParleyStarted(address indexed a, address indexed b, uint64 until);
     event ParleyJump(address indexed captain, address indexed partner, uint16 island);
     event CoinsChanged(address indexed captain, uint256 balance);
@@ -87,6 +95,7 @@ contract LanternSea {
     error NotEnoughCoins();
     error NotEnoughGems();
     error BadNote();
+    error BadTile();
     error AlreadyNoted();
     error BadParley();
     error ParleyUsedToday();
@@ -309,16 +318,46 @@ contract LanternSea {
 
     // ---------------------------------------------------------------- captain's log notes
 
-    /// @notice Leave one short note on an island you have visited. Order is preserved; index 0 is usually the discoverer.
-    /// Do not write personal data: notes are public and permanent.
-    function leaveNote(uint16 island, string calldata text) external {
+    /// @notice Is interior tile `tile` (0..80, row-major 9x9) dry land on this island?
+    /// The outline is 8 radial sectors whose radii come from the island hash; the 3x3 centre is always land.
+    /// web/src/world.js mirrors this exactly so the island view matches what the contract accepts.
+    function isLand(uint16 island, uint8 tile) public view returns (bool) {
+        if (tile >= uint256(ISLAND_GRID) * ISLAND_GRID) return false;
+        int256 x = int256(uint256(tile % ISLAND_GRID)) - 4;
+        int256 y = int256(uint256(tile / ISLAND_GRID)) - 4;
+        uint256 d2 = uint256(x * x + y * y);
+        if (d2 <= 2) return true;
+        uint256 ax = uint256(x < 0 ? -x : x);
+        uint256 ay = uint256(y < 0 ? -y : y);
+        uint256 sector = y >= 0
+            ? (x >= 0 ? (ax >= ay ? 0 : 1) : (ax >= ay ? 3 : 2))
+            : (x < 0 ? (ax >= ay ? 4 : 5) : (ax >= ay ? 7 : 6));
+        uint256 h = uint256(keccak256(abi.encode(worldSeed, island, "land")));
+        uint256 r2 = 5 + ((h >> (sector * 8)) & 0xFF) % 12; // radius^2 between 5 and 16
+        return d2 <= r2;
+    }
+
+    /// @notice Build a note pole on an island you have visited, paying NOTE_COST coins.
+    /// The first pole always stands on the centre tile; later poles go on any other free land tile.
+    /// Order is preserved. Do not write personal data: notes are public and permanent.
+    function leaveNote(uint16 island, string calldata text, uint8 tile) external {
         if (!visited[msg.sender][island]) revert NotVisited();
         uint256 len = bytes(text).length;
         if (len == 0 || len > NOTE_MAX_BYTES) revert BadNote();
         if (hasNoted[msg.sender][island]) revert AlreadyNoted();
+        if (notes[island].length == 0) {
+            if (tile != CENTER_TILE) revert BadTile();
+        } else if (tile == CENTER_TILE || tileTaken[island][tile] || !isLand(island, tile)) {
+            revert BadTile();
+        }
+        Captain storage c = captains[msg.sender];
+        if (c.coins < NOTE_COST) revert NotEnoughCoins();
+        c.coins -= NOTE_COST;
         hasNoted[msg.sender][island] = true;
-        notes[island].push(Note(msg.sender, uint64(block.timestamp), text));
-        emit NoteLeft(island, msg.sender, notes[island].length - 1);
+        tileTaken[island][tile] = true;
+        notes[island].push(Note(msg.sender, uint64(block.timestamp), tile, text));
+        emit NoteLeft(island, msg.sender, notes[island].length - 1, tile);
+        emit CoinsChanged(msg.sender, c.coins);
     }
 
     // ---------------------------------------------------------------- Parley (in-person meeting)

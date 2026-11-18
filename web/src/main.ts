@@ -8,8 +8,11 @@ import raidAbiJson from './generated/BossRaid.json';
 import escrowAbiJson from './generated/RaidEscrow.json';
 import usdcAbiJson from './generated/MockUSDC.json';
 import { guestSigner, injectedSigner, pub, read, transact, type Config, type Network, type Signer } from './chain';
-import { SeaMap } from './map';
-import { lanes, islandName, gemTypeOf, decodeBoard, isSolved, moveForTap, moveBlank, GEMS, GEM_PRICE } from './world.js';
+import { SeaMap, islandPos, type IslandData } from './map';
+import { THEMES } from './art';
+import { ICONS } from './icons';
+const COIN = `<i class="ci">${ICONS.coin}</i>`;
+import { lanes, islandName, gemTypeOf, islandTheme, decodeBoard, NOTE_COST, CENTER_TILE, isSolved, moveForTap, moveBlank, GEMS, GEM_PRICE } from './world.js';
 import './style.css';
 
 const seaAbi = seaAbiJson as Abi, coopAbi = coopAbiJson as Abi, yardAbi = yardAbiJson as Abi;
@@ -19,7 +22,7 @@ const raidAbi = raidAbiJson as Abi, escrowAbi = escrowAbiJson as Abi, usdcAbi = 
 
 type CaptainView = { registered: boolean; home: number; charges: number; nextChargeAt: bigint; streak: number; sails: number;
   islandsFound: number; coins: bigint; gems: readonly bigint[]; visitedCount: bigint };
-type Note = { author: Address; at: bigint; text: string };
+type Note = { author: Address; at: bigint; tile: number; text: string };
 type Voyage = { id: bigint; a: Address; b: Address; from: number; to: number; dir: number; cost: number; aCharges: number;
   status: number; startedAt: bigint; aSolvedAt: bigint; bSolvedAt: bigint; fresh: boolean };
 type RaidView = { leadA: Address; leadB: Address; status: number; settled: boolean; island: number; proposedAt: bigint;
@@ -65,6 +68,8 @@ let partners: { who: Address; until: number }[] = [];
 let sharedWith: Address | null = null;
 let partnerVisited = new Set<number>();
 let selected: number | null = null;
+let inside: number | null = null; // island whose interior is on screen
+let placing = false, pickTile: number | null = null, selectedNote: number | null = null, focusLane: number | null = null;
 let island: { finder: Address; notes: Note[]; homes: Address[] } | null = null;
 let tab: Tab = 'island';
 let stats: Stats | null = null, equipped: number[] = [0, 0, 0, 0, 0], dmgLevel = 0, multLevel = 0;
@@ -107,6 +112,7 @@ const FRIENDLY: [RegExp, string][] = [
   [/ParleyUsedToday/, 'You two already held a Parley today.'],
   [/BadParley/, 'That Parley code is invalid or expired. Ask for a fresh code.'],
   [/WrongSolution/, 'The puzzle is not solved yet.'],
+  [/BadTile/, 'That spot is taken or in the water. Tap one of the glowing spots.'],
   [/WindowClosed/, 'Too late: the 60-second window closed.'],
   [/HelpersFull/, 'This raid already has 20 helpers.'],
   [/FAUCET_COOLDOWN/, 'Test USDC faucet: once per hour.'],
@@ -272,6 +278,47 @@ function updateMap() {
     ship: me?.registered ? (visited[visited.length - 1] ?? me.home) : null, otherHomes,
     boss: boss?.island ?? null, selected
   });
+  if (inside !== null) map.enterIsland(islandData(inside));
+}
+
+function islandData(n: number): IslandData {
+  const from = islandPos(n, mapSize);
+  const known = visited.includes(n);
+  return {
+    seed, island: n, name: islandName(n), isHome: me?.registered ? me.home === n : false,
+    poles: (selected === n ? island?.notes ?? [] : []).map(x => ({ author: x.author, tile: Number(x.tile), text: x.text })),
+    docks: known ? lanes(seed, mapSize, n).map(l => {
+      const to = islandPos(l.to, mapSize);
+      return { dir: l.dir, cost: l.cost, coop: l.coop, angle: Math.atan2(to.y - from.y, to.x - from.x),
+        label: visited.includes(l.to) ? islandName(l.to) : '?' };
+    }) : [],
+    placing, pick: pickTile, selectedPole: selectedNote
+  };
+}
+
+/** The ship sails across the sea to the island (camera follows), the island pops out of the fog, then we go ashore. */
+async function voyageTo(from: number, to: number) {
+  const coinsBefore = me?.coins ?? 0n;
+  inside = null; placing = false; pickTile = null;
+  busy = 'Sailing…'; render();
+  await map?.sailTo(from, to);
+  if (!visited.includes(to)) visited = [...visited, to];
+  selected = to;
+  updateMap();
+  await refresh();
+  const gained = (me?.coins ?? 0n) - coinsBefore;
+  map?.floatText(to, gained > 0n ? `+${gained} coins!` : 'Already claimed');
+  notice = gained > 0n ? `New island discovered: ${islandName(to)}! +${gained} coins.` : `${islandName(to)} was already claimed. Sign its log or sail on.`;
+  await new Promise(r => setTimeout(r, 1100));
+  enterIsland(to);
+}
+
+function enterIsland(n: number) {
+  selected = n; inside = n; island = null; tab = 'island'; coopForm = null; sheetMin = false;
+  placing = false; pickTile = null; selectedNote = null; focusLane = null;
+  renderedTab = null; // start the panel at the top for the new island
+  render();
+  void loadIsland(n).then(() => { render(); updateMap(); });
 }
 
 // ------------------------------------------------------------------ render: pieces
@@ -279,16 +326,16 @@ function updateMap() {
 function hud() {
   const charges = me?.registered ? me.charges : 0;
   const next = me?.registered && me.nextChargeAt > 0n ? left(Number(me.nextChargeAt) - now()) : '';
-  const lanterns = Array.from({ length: 3 }, (_, i) => `<i class="lantern ${i < charges ? 'lit' : ''}" aria-hidden="true"></i>`).join('');
+  const lanterns = Array.from({ length: 3 }, (_, i) => `<i class="lantern ${i < charges ? 'lit' : ''}">${ICONS.lantern}</i>`).join('');
   const gemCount = me ? me.gems.reduce((s, g) => s + g, 0n) : 0n;
   return `<header class="hud">
-    <a class="brand" href="./" aria-label="Lantern Sea home"><span class="brand-mark"></span><b>Lantern</b>Sea</a>
+    <a class="brand" href="./" aria-label="Lantern Sea home"><span class="brand-mark">${ICONS.logo}</span><span class="brand-text"><b>Lantern</b> Sea</span></a>
     <div class="meters">
-      <span class="meter" title="Sailing charges (max 3)">${lanterns}<small>${charges}/3${next ? ` · +1 in ${next}` : ''}</small></span>
-      <span class="meter coin" title="Coins (free in-game points)">◉ ${me ? me.coins.toString() : '0'}</span>
-      <span class="meter gem" title="Gems">◆ ${gemCount.toString()}</span>
+      <span class="meter charges" title="Sailing charges (max 3)">${lanterns}${next ? `<small>+1 in ${next}</small>` : ''}</span>
+      <span class="meter coin" title="Coins (free in-game points)"><i class="mi">${ICONS.coin}</i>${me ? me.coins.toString() : '0'}</span>
+      <span class="meter gem" title="Gems"><i class="mi">${ICONS.gem}</i>${gemCount.toString()}</span>
     </div>
-    ${signer ? `<button class="chip" data-tab="help">● ${short(signer.address)}</button>`
+    ${signer ? `<button class="chip" data-tab="help" aria-label="Account ${short(signer.address)}"><span class="dot"></span>${short(signer.address)}</button>`
       : `<button class="chip primary" data-act="connect">Connect</button>`}
   </header>`;
 }
@@ -317,6 +364,7 @@ function islandPanel() {
   const isPartner = !isMine && partnerVisited.has(n);
   const finder = island?.finder;
   const badges = [
+    `<span class="badge theme-${islandTheme(seed, n)}">${THEMES[islandTheme(seed, n)].name} island</span>`,
     n === me.home ? '<span class="badge home">Your home</span>' : '',
     ...(island?.homes ?? []).filter(h => !mine(h)).map(h => `<span class="badge base">Base of ${short(h)}</span>`),
     finder && finder !== ZERO ? `<span class="badge">Discovered by ${name(finder)}</span>` : '',
@@ -328,24 +376,36 @@ function islandPanel() {
     const can = me!.charges >= l.cost && !busy;
     const btn = l.coop
       ? `<button data-act="coop-form" data-dir="${l.dir}" ${busy ? 'disabled' : ''}>Plan crew voyage</button>`
-      : `<button class="primary" data-act="sail" data-dir="${l.dir}" ${can ? '' : 'disabled'}>Set sail ⚓${l.cost}</button>`;
+      : `<button class="go" data-act="sail" data-dir="${l.dir}" ${can ? '' : 'disabled'}>Set sail ⚓${l.cost}</button>`;
     const form = coopForm?.dir === l.dir ? coopFormMarkup(l.cost) : '';
-    return `<li class="lane ${l.coop ? 'coop' : ''}"><span class="lane-cost">⚓${l.cost}${l.coop ? '<small>crew</small>' : ''}</span>
+    return `<li class="lane ${l.coop ? 'coop' : ''} ${focusLane === l.dir ? 'focus' : ''}" id="lane-${l.dir}"><span class="lane-cost ${l.coop ? 'crew' : l.cost === 2 ? 'two' : 'one'}"><i>${ICONS.anchor}</i>${l.cost}${l.coop ? '<small>crew</small>' : ''}</span>
       <span class="lane-dest">Lane ${l.dir + 1} → ${dest}${l.coop && !known ? `<small>Guaranteed ${GEMS[gemTypeOf(seed, l.to)]} for the first crew</small>` : ''}</span>${btn}${form}</li>`;
   }).join('') : '';
   const notes = island?.notes ?? [];
-  const noteRows = notes.map((x, i) => `<li><span class="note-meta">#${i + 1} ${same(x.author, finder) ? '<b class="first">First discoverer</b>' : ''} ${name(x.author)} · ${new Date(Number(x.at) * 1000).toLocaleString()}</span>${esc(x.text)}</li>`).join('');
+  const noteRows = notes.map((x, i) => `<li class="${selectedNote === i ? 'sel' : ''}" id="note-${i}" data-act="pick-note" data-i="${i}"><span class="note-meta">Pole #${i + 1} · ${Number(x.tile) === CENTER_TILE ? 'centre' : 'by the shore'} ${same(x.author, finder) ? '<b class="first">· First discoverer</b>' : ''} · ${name(x.author)} · ${new Date(Number(x.at) * 1000).toLocaleString()}</span>${esc(x.text)}</li>`).join('');
   const canNote = isMine && !notes.some(x => mine(x.author));
+  const firstPole = notes.length === 0;
+  const coins = me.coins;
+  const buildReady = coins >= BigInt(NOTE_COST) && (firstPole || pickTile !== null) && !busy;
+  const noteForm = canNote ? `<div class="note-form">
+      <textarea id="note" maxlength="140" rows="2" placeholder="Write your note (public forever, no personal info)"></textarea>
+      <p class="hint">${firstPole ? 'You are first here: your pole stands in the centre of the island, with a lantern on top.'
+        : pickTile !== null ? 'Spot chosen. Build your pole there, or tap another glowing spot.'
+        : 'The centre is taken. Choose a free spot on the island for your pole.'}</p>
+      ${firstPole ? '' : `<button data-act="place">${placing ? 'Cancel choosing' : pickTile !== null ? 'Choose another spot' : 'Choose a spot on the island'}</button>`}
+      <button class="primary" data-act="note" ${buildReady ? '' : 'disabled'}>Build note pole · ${COIN}${NOTE_COST}</button>
+      ${coins < BigInt(NOTE_COST) ? `<p class="hint">You need ${NOTE_COST} coins. Sail to new islands to earn them.</p>` : ''}
+    </div>` : '';
   return `<div class="card">
     <div class="island-head"><h2>${esc(islandName(n))}</h2><span class="muted">#${n}</span></div>
+    ${inside !== n ? `<button class="go wide" data-act="enter">Go ashore</button>` : ''}
     <div class="badges">${badges}</div>
     ${isPartner ? `<p>Your Parley partner has been here.</p><button class="primary wide" data-act="jump" ${me.charges >= 1 && !busy ? '' : 'disabled'}>Jump here with Parley ⚓1</button>` : ''}
-    ${isMine ? `<h3>Sea lanes</h3><ul class="lanes">${laneRows}</ul>
+    ${isMine ? `<h3>Sea lanes <span class="muted">· the docks on the shore</span></h3><ul class="lanes">${laneRows}</ul>
       <p class="hint">Rewards are fixed by lane cost (⚓1: 10–20 coins, ⚓2: 25–40, crew: 60–100 + gem). Your daily streak sets where you land in the range. Claimed islands pay nothing.</p>` : ''}
-    <h3>Captain's log <span class="muted">${notes.length} note${notes.length === 1 ? '' : 's'}</span></h3>
-    ${notes.length ? `<ol class="notes">${noteRows}</ol>` : '<p class="muted">No notes yet. Be the first to sign this island.</p>'}
-    ${canNote ? `<div class="note-form"><textarea id="note" maxlength="140" rows="2" placeholder="Leave a short note (public forever, no personal info)"></textarea>
-      <button data-act="note">Sign the log</button></div>` : ''}
+    <h3>Note poles <span class="muted">${notes.length} on this island · tap a pole to read it</span></h3>
+    ${notes.length ? `<ol class="notes">${noteRows}</ol>` : '<p class="muted">No poles yet. The first one stands in the centre.</p>'}
+    ${noteForm}
   </div>`;
 }
 
@@ -366,7 +426,7 @@ function shipPanel() {
   const slots = SLOTS.map((s, i) => {
     const p = PARTS.find(x => x.id === equipped[i]);
     const shop = PARTS.filter(x => x.slot === i).map(x => `<li><span><b>${x.name}</b><small>${x.fx}</small></span>
-      ${equipped[i] === x.id ? '<span class="badge">Installed</span>' : `<button data-act="buy" data-part="${x.id}" ${me!.coins >= BigInt(x.price) && !busy ? '' : 'disabled'}>◉ ${x.price}</button>`}</li>`).join('');
+      ${equipped[i] === x.id ? '<span class="badge">Installed</span>' : `<button data-act="buy" data-part="${x.id}" ${me!.coins >= BigInt(x.price) && !busy ? '' : 'disabled'}>${COIN}${x.price}</button>`}</li>`).join('');
     return `<details class="slot"><summary><span>${s}</span><b>${p ? p.name : 'Empty'}</b></summary><ul class="shop">${shop}</ul></details>`;
   }).join('');
   const dCost = 40 * (dmgLevel + 1), mCost = 60 * (multLevel + 1);
@@ -377,8 +437,8 @@ function shipPanel() {
       <div><span>Part ×</span><b>×${fmt(stats.xMult, 10000)}</b></div><div class="power"><span>Power</span><b>${stats.power}</b></div>
     </div>
     <p class="hint">Power = damage × mult × part multipliers. In a raid, a lead crew adds their damage and mults together and stacks both ships' × parts.</p>
-    <div class="row"><button data-act="up-dmg" ${me.coins >= BigInt(dCost) && !busy ? '' : 'disabled'}>+5 damage · ◉ ${dCost}</button>
-      <button data-act="up-mult" ${me.coins >= BigInt(mCost) && !busy ? '' : 'disabled'}>+0.10 mult · ◉ ${mCost}</button></div>
+    <div class="row"><button data-act="up-dmg" ${me.coins >= BigInt(dCost) && !busy ? '' : 'disabled'}>+5 damage<br>${COIN}${dCost}</button>
+      <button data-act="up-mult" ${me.coins >= BigInt(mCost) && !busy ? '' : 'disabled'}>+0.10 mult<br>${COIN}${mCost}</button></div>
     <h3>Parts (buying replaces the old part)</h3>${slots}
   </div>`;
 }
@@ -392,7 +452,7 @@ function crewPanel() {
     const deadline = Number(v.startedAt) + coopWindow;
     const solvedMe = amA ? v.aSolvedAt : v.bSolvedAt, solvedThem = amA ? v.bSolvedAt : v.aSolvedAt;
     let actions = '';
-    if (v.status === 1 && !amA) actions = `<button class="primary" data-act="join" data-id="${v.id}" ${!busy ? '' : 'disabled'}>Join (⚓${v.cost - v.aCharges})</button>`;
+    if (v.status === 1 && !amA) actions = `<button class="go" data-act="join" data-id="${v.id}" ${!busy ? '' : 'disabled'}>Join (⚓${v.cost - v.aCharges})</button>`;
     if (v.status === 1) actions += `<button data-act="cancel" data-id="${v.id}">Cancel</button>`;
     if (v.status === 2 && deadline > now() && solvedMe === 0n) actions = `<button class="primary" data-act="open-puzzle" data-id="${v.id}">Open puzzle</button>`;
     if (v.status === 2 && deadline <= now()) actions = `<button data-act="expire" data-id="${v.id}">Mark lost</button>`;
@@ -427,7 +487,7 @@ function raidPanel() {
         <datalist id="partners">${partners.map(p => `<option value="${p.who}">`).join('')}</datalist>
         <button class="primary" data-act="lead">Propose to lead</button></div>`;
     } else if (r.status === 1) {
-      actions = mine(r.leadB) ? '<button class="primary wide" data-act="accept-lead">Accept and open the raid</button>'
+      actions = mine(r.leadB) ? '<button class="go wide" data-act="accept-lead">Accept and open the raid</button>'
         : `<p class="muted">Waiting for ${short(r.leadB)} to accept.</p>`;
     } else if (r.status === 2 && timeLeft > 0) {
       actions = `<button class="primary wide danger" data-act="attack" ${me.charges >= 1 && !busy ? '' : 'disabled'}>Sail & attack ⚓1 · ${lead ? `crew power ${crewPower}` : `power ${stats?.power ?? 0n}`}</button>`;
@@ -440,7 +500,7 @@ function raidPanel() {
   return `<div class="card raid">
     <div class="island-head"><h2>☠ ${BOSSES[tier]}</h2><span class="muted">${boss.island !== null ? esc(islandName(boss.island)) : ''}</span></div>
     <div class="hp" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span><b>${hp} / ${boss.maxHp} HP</b></div>
-    <p class="muted">${RAID_STATUS[r.status]}${r.settled ? ' · settled' : ''} · leaves in ${left(timeLeft)} · boss coins for the lead crew: ◉ ${boss.coins}</p>
+    <p class="muted">${RAID_STATUS[r.status]}${r.settled ? ' · settled' : ''} · leaves in ${left(timeLeft)} · boss coins for the lead crew: ${COIN}${boss.coins}</p>
     ${r.status >= 1 ? `<p>Lead crew: <b>${name(r.leadA)}</b> + <b>${name(r.leadB)}</b> · bounty <b>${usd(r.bounty)} USDC</b> (escrowed on C-Chain)</p>` : ''}
     ${actions}
     ${helpers.length ? `<h3>Damage</h3><ul class="list">${helpers.map(h => `<li><span><b>${name(h.who)}</b><small>helper · ${r.totalDamage > 0n ? Number((h.dmg * 1000n) / r.totalDamage) / 10 : 0}% of damage</small></span><b>${h.dmg}</b></li>`).join('')}</ul>` : ''}
@@ -459,10 +519,10 @@ function cabinetPanel() {
     <h2>Treasure cabinet</h2>
     <div class="statgrid">
       <div><span>Islands found</span><b>${me.islandsFound}</b></div><div><span>Voyages</span><b>${me.sails}</b></div>
-      <div><span>Streak</span><b>${me.streak} day${me.streak === 1 ? '' : 's'}</b></div><div><span>Coins</span><b>◉ ${me.coins}</b></div>
+      <div><span>Streak</span><b>${me.streak} day${me.streak === 1 ? '' : 's'}</b></div><div><span>Coins</span><b>${COIN}${me.coins}</b></div>
     </div>
     <h3>Gems</h3>
-    <ul class="gems">${GEMS.map((g, i) => `<li class="gem-${i}"><i></i><span><b>${g}</b><small>${me!.gems[i]} owned · sells for ◉ ${GEM_PRICE[i]}</small></span>
+    <ul class="gems">${GEMS.map((g, i) => `<li class="gem-${i}"><i></i><span><b>${g}</b><small>${me!.gems[i]} owned · sells for ${COIN}${GEM_PRICE[i]}</small></span>
       ${signer && !viewAs ? `<button data-act="sell" data-gem="${i}" ${me!.gems[i] > 0n && !busy ? '' : 'disabled'}>Sell 1</button>` : ''}</li>`).join('')}</ul>
     <p class="hint">Gems come only from the first crew landing on a co-op island. They sell to the harbour for coins, never for money.</p>
     <h3>Share</h3><p><code class="copy" data-copy="${esc(link)}">${esc(link)}</code></p>
@@ -546,7 +606,9 @@ function render() {
     <section id="sheet" class="sheet ${sheetMin ? 'min' : ''}"><button class="grip" data-act="grip" aria-label="${sheetMin ? 'Expand panel' : 'Collapse panel'}">${sheetMin ? '▴' : '▾'}</button>${panel}
       <div class="notice ${noticeError ? 'error' : ''}" role="status" aria-live="polite">${esc(busy || notice)}</div></section>
     <nav class="tabs">${(['island', 'ship', 'crew', 'raid', 'cabinet', 'help'] as Tab[]).map(t => `<button data-tab="${t}" class="${tab === t ? 'on' : ''}">
-      <i class="ico ico-${t}"></i>${t === 'island' ? 'Sea' : t === 'cabinet' ? 'Cabinet' : t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</nav>
+      <span class="ico">${ICONS[t]}</span>${t === 'island' ? 'Sea' : t === 'cabinet' ? 'Cabinet' : t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</nav>
+    <div class="mapctl"><button data-act="zoom-in" aria-label="Zoom in">+</button><button data-act="zoom-out" aria-label="Zoom out">−</button>${inside !== null ? '<button data-act="fit" aria-label="Fit island">⤢</button>' : ''}</div>
+    ${inside !== null ? '<button class="backsea primary" data-act="back-sea">⟵ Back to sea</button>' : ''}
     <div id="overlay-root"></div>`;
   // After a successful action the forms start clean; otherwise restore what was typed.
   if (!clearForms) for (const [id, v] of values) {
@@ -560,7 +622,7 @@ function render() {
   const sheet = document.querySelector('#sheet');
   if (sheet) sheet.scrollTop = scrollTop;
   updateInsets();
-  for (const part of ui.querySelectorAll('.hud, #sheet, .tabs')) bind(part);
+  for (const part of ui.querySelectorAll('.hud, #sheet, .tabs, .mapctl, .backsea')) bind(part);
   // The open puzzle keeps its own DOM so taps are never lost to a background refresh.
   const root = ui.querySelector<HTMLElement>('#overlay-root')!;
   const keep = keptOverlay && ((puzzle && keptOverlay.dataset.pid === String(puzzle.id)) || (!puzzle && overlay === 'scan' && keptOverlay.dataset.kind === 'scan'));
@@ -584,7 +646,9 @@ function bind(root: Element) {
     void navigator.clipboard?.writeText(el.dataset.copy!).then(() => { notice = 'Copied.'; noticeError = false; render(); });
   }));
   root.querySelectorAll<HTMLButtonElement>('[data-cell]').forEach(el => el.addEventListener('click', () => tapTile(Number(el.dataset.cell))));
-  root.querySelectorAll<HTMLButtonElement>('[data-act]').forEach(el => el.addEventListener('click', () => onAction(el)));
+  const actionable = [...root.querySelectorAll<HTMLElement>('[data-act]')];
+  if (root instanceof HTMLElement && root.dataset.act) actionable.push(root); // e.g. the floating "Back to sea" button
+  actionable.forEach(el => el.addEventListener('click', () => onAction(el)));
 }
 
 const val = (id: string) => (document.querySelector<HTMLInputElement>(`#${id}`)?.value ?? '').trim();
@@ -609,8 +673,9 @@ function onAction(el: HTMLElement) {
     case 'sail': return void act('Setting sail', async () => {
       const dir = Number(el.dataset.dir);
       const lane = lanes(seed, mapSize, selected!)[dir];
-      await tx(g, config.sea, seaAbi, 'sail', [selected, dir], `Sail to ${visited.includes(lane.to) ? islandName(lane.to) : 'unknown waters'}`);
-      selected = lane.to; map?.focus(lane.to);
+      const from = selected!;
+      await tx(g, config.sea, seaAbi, 'sail', [from, dir], `Sail to ${visited.includes(lane.to) ? islandName(lane.to) : 'unknown waters'}`);
+      await voyageTo(from, lane.to);
     });
     case 'coop-form': coopForm = coopForm?.dir === Number(el.dataset.dir) ? null : { dir: Number(el.dataset.dir) }; render(); return;
     case 'propose': return void act('Sending invitation', async () => {
@@ -627,13 +692,30 @@ function onAction(el: HTMLElement) {
       const board = await read<bigint>(g, config.coop, coopAbi, 'puzzleOf', [puzzle!.id, signer!.address]);
       puzzle = { ...puzzle!, cells: decodeBoard(board), moves: [] };
     }).then(renderOverlay);
-    case 'note': return void act('Signing the log', async () => {
+    case 'note': return void act('Building your note pole', async () => {
       const text = val('note');
       if (!text) throw new Error('Write a short note first.');
       if (new TextEncoder().encode(text).length > 140) throw new Error('Notes are limited to 140 bytes.');
-      await tx(g, config.sea, seaAbi, 'leaveNote', [selected, text], 'Sign captain\'s log');
+      const tile = (island?.notes.length ?? 0) === 0 ? CENTER_TILE : pickTile;
+      if (tile === null) throw new Error('Choose a spot on the island first.');
+      await tx(g, config.sea, seaAbi, 'leaveNote', [selected, text, tile], 'Build note pole');
+      placing = false; pickTile = null;
     });
-    case 'jump': return void act('Jumping', () => tx(g, config.sea, seaAbi, 'parleyJump', [sharedWith, selected], 'Parley jump'));
+    case 'place':
+      if (inside !== selected && selected !== null) enterIsland(selected);
+      placing = !placing; pickTile = null; render(); updateMap(); return;
+    case 'pick-note': selectedNote = Number(el.dataset.i); render(); updateMap(); return;
+    case 'enter': if (selected !== null) enterIsland(selected); return;
+    case 'back-sea': inside = null; placing = false; pickTile = null; selectedNote = null; map?.leaveIsland(); render(); return;
+    case 'zoom-in': map?.zoomBy(1.25); return;
+    case 'zoom-out': map?.zoomBy(0.8); return;
+    case 'fit': map?.fitIsland(); return;
+    case 'jump': return void act('Jumping', async () => {
+      const to = selected!;
+      const from = visited[visited.length - 1] ?? me!.home;
+      await tx(g, config.sea, seaAbi, 'parleyJump', [sharedWith, to], 'Parley jump');
+      await voyageTo(from, to);
+    });
     case 'buy': return void act('Fitting part', () => tx(g, config.shipyard, yardAbi, 'buyPart', [Number(el.dataset.part)], `Install ${PARTS.find(p => p.id === Number(el.dataset.part))!.name}`));
     case 'up-dmg': return void act('Upgrading', () => tx(g, config.shipyard, yardAbi, 'upgrade', [true], 'Upgrade damage'));
     case 'up-mult': return void act('Upgrading', () => tx(g, config.shipyard, yardAbi, 'upgrade', [false], 'Upgrade mult'));
@@ -755,11 +837,19 @@ async function boot() {
   const view = new URLSearchParams(location.search).get('captain');
   if (view && isAddress(view)) { viewAs = view; tab = 'cabinet'; }
   app.innerHTML = '<div id="sea" class="sea" aria-label="Sea map"></div><div id="ui" class="ui"></div>';
-  map = new SeaMap(document.querySelector('#sea')!, n => {
-    selected = n; island = null; tab = 'island'; coopForm = null; sheetMin = false;
-    render(); void loadIsland(n).then(render);
+  map = new SeaMap(document.querySelector('#sea')!, n => enterIsland(n), {
+    onTile: t => { pickTile = t; placing = false; tab = 'island'; sheetMin = false; render(); updateMap(); },
+    onPole: i => {
+      selectedNote = i; tab = 'island'; sheetMin = false; render(); updateMap();
+      document.querySelector(`#note-${i}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    },
+    onDock: dir => {
+      focusLane = dir; tab = 'island'; sheetMin = false; render();
+      document.querySelector(`#lane-${dir}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
   });
   if (config.mode === 'local') {
+    (window as unknown as { __lantern: unknown }).__lantern = { map }; // local debugging and tests only
     try { if (sessionStorage.getItem('lantern-guest-key')) await connect('guest'); } catch { /* storage blocked */ }
   } else if (window.ethereum) {
     try {

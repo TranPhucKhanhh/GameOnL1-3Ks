@@ -10,4 +10,4 @@
 - [Foundry](https://getfoundry.sh), [viem](https://viem.sh), [Phaser 3](https://phaser.io), [jsQR](https://github.com/cozmo/jsQR), [node-qrcode](https://github.com/soldair/node-qrcode).
 - Circle test USDC faucet: [faucet.circle.com](https://faucet.circle.com).
 
-All pixel art (islands, ship, boss, icons) is drawn in code in this repo. No external asset packs are used.
+All cartoon art (islands, ship, boss, icons) is drawn in code in this repo (Phaser graphics and inline SVG). Fonts: Lilita One and Nunito from Google Fonts. No external asset packs are used.

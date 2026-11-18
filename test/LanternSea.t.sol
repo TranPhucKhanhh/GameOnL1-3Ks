@@ -353,26 +353,67 @@ contract LanternSeaTest {
 
     // ------------------------------------------------------------ notes
 
-    function testNotesAreOrderedOnePerCaptainAndNeedAVisit() public {
+    function testNotePolesCostCoinsCentreFirstThenFreeLand() public {
         _register(alice);
         _register(bob);
         uint16 home = sea.homeOf(alice);
+        // Building a pole costs coins.
         vm.prank(alice);
-        sea.leaveNote(home, "First to land. Ahoy!");
+        vm.expectRevert(LanternSea.NotEnoughCoins.selector);
+        sea.leaveNote(home, "First to land. Ahoy!", 40);
+        vm.prank(address(raid));
+        sea.addCoins(alice, 100);
+        // The first pole must stand on the centre tile.
+        vm.prank(alice);
+        vm.expectRevert(LanternSea.BadTile.selector);
+        sea.leaveNote(home, "off centre", 41);
+        vm.prank(alice);
+        sea.leaveNote(home, "First to land. Ahoy!", 40);
+        _eq(_coins(alice), 75, "NOTE_COST_PAID");
         vm.prank(alice);
         vm.expectRevert(LanternSea.AlreadyNoted.selector);
-        sea.leaveNote(home, "again");
+        sea.leaveNote(home, "again", 41);
+        vm.prank(bob);
+        vm.expectRevert(LanternSea.NotVisited.selector);
+        sea.leaveNote(home, "hi", 41);
+
+        // Bob reaches Alice's island through a Parley jump, then must pick a free land tile around the centre.
+        uint64 expiry = uint64(block.timestamp + 60);
+        bytes memory code = _parleyCode(ALICE_PK, expiry);
+        vm.prank(bob);
+        sea.parley(alice, expiry, code);
         if (!sea.visited(bob, home)) {
             vm.prank(bob);
-            vm.expectRevert(LanternSea.NotVisited.selector);
-            sea.leaveNote(home, "hi");
+            sea.parleyJump(alice, home);
         }
-        vm.prank(alice);
-        vm.expectRevert(LanternSea.BadNote.selector);
-        sea.leaveNote(home, "");
+        vm.prank(address(raid));
+        sea.addCoins(bob, 100);
+        vm.prank(bob);
+        vm.expectRevert(LanternSea.BadTile.selector);
+        sea.leaveNote(home, "centre is taken", 40);
+        _ok(!sea.isLand(home, 0), "CORNER_IS_SEA"); // corner: distance^2 32 > max radius^2 16
+        vm.prank(bob);
+        vm.expectRevert(LanternSea.BadTile.selector);
+        sea.leaveNote(home, "in the sea", 0);
+        _ok(sea.isLand(home, 41), "NEXT_TO_CENTRE_IS_LAND");
+        vm.prank(bob);
+        sea.leaveNote(home, "Parley crew was here", 41);
+
         LanternSea.Note[] memory list = sea.getNotes(home, 0, 10);
-        _eq(list.length, 1, "ONE_NOTE");
-        _eq(uint160(list[0].author), uint160(alice), "AUTHOR");
+        _eq(list.length, 2, "TWO_POLES");
+        _eq(uint160(list[0].author), uint160(alice), "FIRST_AUTHOR");
+        _eq(list[0].tile, 40, "FIRST_AT_CENTRE");
+        _eq(list[1].tile, 41, "SECOND_TILE");
+        _ok(sea.tileTaken(home, 41), "TILE_TAKEN");
+    }
+
+    function testFuzzIslandCentreIsAlwaysLand(uint16 island) public view {
+        for (uint8 t = 30; t <= 50; t++) {
+            uint256 x = t % 9;
+            uint256 y = t / 9;
+            if (x >= 3 && x <= 5 && y >= 3 && y <= 5) _ok(sea.isLand(island, t), "CENTRE_3x3");
+        }
+        _ok(!sea.isLand(island, 81), "OUT_OF_GRID");
     }
 
     // ------------------------------------------------------------ parley

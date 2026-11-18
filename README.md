@@ -7,7 +7,7 @@ Every captain gets a home island, three sailing charges and a sea that nobody ha
 - **Explore:** each island shows 1–4 sea lanes. You see each lane's direction and cost (⚓1 or ⚓2), but not where it leads. Every island you reach opens new lanes.
 - **Crew lanes:** these cost ⚓4–5, more than one captain can hold, so two captains must pool charges. Then both must solve a 4×4 sliding puzzle within 60 seconds of each other. The first crew to land on a crew island is guaranteed a gem.
 - **Collisions:** the sea is a small hash space on purpose. You will stumble onto other captains' islands and bases.
-- **Captain's log:** the first visitor to an island signs it, and later visitors add notes in order.
+- **Go ashore:** tap any island to walk its hash-generated land. Build a note pole for 25 coins: the first pole stands in the centre, and later ones go on any free spot you pick. Tap a pole to read it.
 - **Parley:** meet in person and scan each other's QR code. For a while your maps are shared, and you can jump to any of your crewmate's islands for ⚓1.
 - **Ship:** five part slots and two upgradable stats, damage and multiplier. Parts can add damage, add multiplier, or multiply total power.
 - **Boss raids:** a co-op crew leads a time-limited boss raid. They can escrow test USDC on C-Chain as a bounty. Helpers spend charges to attack. If the boss falls, helpers are paid by damage share, and the rest goes back to the crew.
@@ -18,13 +18,15 @@ Every captain gets a home island, three sailing charges and a sea that nobody ha
 
 ## Quick start (Windows, local)
 
+Commands below are for **Command Prompt (CMD)**; the npm commands also work in PowerShell.
+
 Requirements: Node.js 22.12+, Git, and Foundry (`forge`, `cast`, `anvil`). `npm run foundry:install` downloads a checksummed Foundry build into `.tools/`.
 
-```powershell
+```bat
 npm ci
 ```
 
-```powershell
+```bat
 npm run local
 ```
 
@@ -34,19 +36,19 @@ To test on a phone, see [local development](docs/local-development.md#play-on-a-
 
 ## Check everything
 
-```powershell
+```bat
 npm run check
 ```
 
-```powershell
+```bat
 npm run test:e2e
 ```
 
-```powershell
+```bat
 npm run test:ui
 ```
 
-These run the 23 Foundry contract tests, the frontend build, an end-to-end test on two local chains with a simulated ICM relay, and a two-captain browser test at phone size. See [testing](docs/testing.md).
+These run the 24 Foundry contract tests, the frontend build, an end-to-end test on two local chains with a simulated ICM relay, and a two-captain browser test at phone size. See [testing](docs/testing.md).
 
 ## Docs
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { toHex } from 'viem';
 import { startLocal, worldSeed } from './local-lib.mjs';
 import { artifact, clients, write } from './lib.mjs';
-import { route, directionCount, homeOf, decodeBoard } from '../web/src/world.js';
+import { route, directionCount, homeOf, decodeBoard, isLand } from '../web/src/world.js';
 import { walk, voyageSeed, solution } from './puzzle-walk.mjs';
 
 const local = await startLocal({ persistConfig: false });
@@ -23,6 +23,12 @@ try {
       const [to, cost] = await readG(config.sea, 'LanternSea', 'route', [island, d]);
       const js = route(worldSeed, mapSize, island, d);
       assert.deepEqual([Number(to), Number(cost)], [js.to, js.cost], `route ${island}/${d}`);
+    }
+  }
+
+  for (const island of [0, 7, 91, 173, 255]) {
+    for (let tile = 0; tile < 81; tile++) {
+      assert.equal(await readG(config.sea, 'LanternSea', 'isLand', [island, tile]), isLand(worldSeed, island, tile), `land ${island}/${tile}`);
     }
   }
 

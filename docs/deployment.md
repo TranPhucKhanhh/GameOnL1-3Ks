@@ -20,33 +20,35 @@ Plan for this: the Builder Console's **free managed testnet nodes and hosted rel
 
 ## 2. Configure
 
-```powershell
-Copy-Item .env.example .env
+```bat
+copy .env.example .env
 ```
 
-```powershell
+```bat
 notepad .env
 ```
 
 Fill in `GAME_RPC_URL`, `GAME_CHAIN_ID`, both messenger addresses, `USDC_ADDRESS` (Circle's Fuji test USDC; check the address in Circle's docs) and `DEPLOYER`. **Never put a private key in `.env`.** Then load the file and read both **blockchain IDs** (bytes32, not chain IDs):
 
-```powershell
-. .\scripts\env.ps1
+```bat
+call scripts\env.cmd
 ```
 
-```powershell
-npm run cast -- call 0x0200000000000000000000000000000000000005 "getBlockchainID()(bytes32)" --rpc-url $env:GAME_RPC_URL
+```bat
+npm run cast -- call 0x0200000000000000000000000000000000000005 "getBlockchainID()(bytes32)" --rpc-url "%GAME_RPC_URL%"
 ```
 
-```powershell
-npm run cast -- call 0x0200000000000000000000000000000000000005 "getBlockchainID()(bytes32)" --rpc-url $env:FUJI_RPC_URL
+```bat
+npm run cast -- call 0x0200000000000000000000000000000000000005 "getBlockchainID()(bytes32)" --rpc-url "%FUJI_RPC_URL%"
 ```
 
-Put the results in `GAME_BLOCKCHAIN_ID` and `ESCROW_BLOCKCHAIN_ID`, then run `. .\scripts\env.ps1` again.
+Put the results in `GAME_BLOCKCHAIN_ID` and `ESCROW_BLOCKCHAIN_ID`, then run `call scripts\env.cmd` again.
+
+All commands in this guide are for **Command Prompt (CMD)**, not PowerShell. Run `call scripts\env.cmd` in each new CMD window, and again after every edit to `.env`.
 
 Import your **test** deployer key into Foundry's encrypted keystore. Foundry prompts for the key, so it never appears in a command or file:
 
-```powershell
+```bat
 npm run cast -- wallet import lantern-deployer --interactive
 ```
 
@@ -54,37 +56,37 @@ Get test AVAX for the deployer from the Builder faucet or team1vn.xyz/faucet.htm
 
 ## 3. Deploy and bind
 
-```powershell
-npm run forge -- script script/Deploy.s.sol:DeployEscrow --rpc-url $env:FUJI_RPC_URL --account lantern-deployer --sender $env:DEPLOYER --broadcast
+```bat
+npm run forge -- script script/Deploy.s.sol:DeployEscrow --rpc-url "%FUJI_RPC_URL%" --account lantern-deployer --sender "%DEPLOYER%" --broadcast
 ```
 
-```powershell
-npm run forge -- script script/Deploy.s.sol:DeployGame --rpc-url $env:GAME_RPC_URL --account lantern-deployer --sender $env:DEPLOYER --broadcast
+```bat
+npm run forge -- script script/Deploy.s.sol:DeployGame --rpc-url "%GAME_RPC_URL%" --account lantern-deployer --sender "%DEPLOYER%" --broadcast
 ```
 
 Copy the deployed addresses into `.env` (`ESCROW_ADDRESS`, `SEA_ADDRESS`, `COOP_ADDRESS`, `SHIPYARD_ADDRESS`, `RAID_ADDRESS`). The receipts are also in `broadcast/`. Reload the file, then bind each peer **once**:
 
-```powershell
-. .\scripts\env.ps1
+```bat
+call scripts\env.cmd
 ```
 
-```powershell
-npm run forge -- script script/Deploy.s.sol:BindGamePeer --rpc-url $env:GAME_RPC_URL --account lantern-deployer --sender $env:DEPLOYER --broadcast
+```bat
+npm run forge -- script script/Deploy.s.sol:BindGamePeer --rpc-url "%GAME_RPC_URL%" --account lantern-deployer --sender "%DEPLOYER%" --broadcast
 ```
 
-```powershell
-npm run forge -- script script/Deploy.s.sol:BindEscrowPeer --rpc-url $env:FUJI_RPC_URL --account lantern-deployer --sender $env:DEPLOYER --broadcast
+```bat
+npm run forge -- script script/Deploy.s.sol:BindEscrowPeer --rpc-url "%FUJI_RPC_URL%" --account lantern-deployer --sender "%DEPLOYER%" --broadcast
 ```
 
 Peers cannot be changed afterwards. If you bind the wrong address, deploy again.
 
 ## 4. Verify and build the frontend
 
-```powershell
+```bat
 npm run config:testnet
 ```
 
-```powershell
+```bat
 npm run build
 ```
 
@@ -98,8 +100,8 @@ Upload `web/dist/` to Cloudflare Pages (or Vercel or Netlify) as a static site. 
 
 - **Gas on the L1:** send each test player a little TIDE from the genesis-funded deployer:
 
-  ```powershell
-  npm run cast -- send <player> --value 1ether --rpc-url $env:GAME_RPC_URL --account lantern-deployer
+  ```bat
+  npm run cast -- send <player> --value 1ether --rpc-url "%GAME_RPC_URL%" --account lantern-deployer
   ```
 
 - **AVAX on Fuji:** each player needs some for the escrow transactions, from a faucet.

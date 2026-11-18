@@ -2,7 +2,7 @@
 
 [← README](../README.md)
 
-```powershell
+```bat
 npm run local
 ```
 
@@ -49,11 +49,11 @@ The phone has to reach your PC's dev server. The camera (QR scanning) also needs
 
 **Option 1: HTTPS tunnel (camera works).** Install Cloudflare's `cloudflared` from Cloudflare's official download page, then run these in a second terminal:
 
-```powershell
+```bat
 npm run local
 ```
 
-```powershell
+```bat
 cloudflared tunnel --url http://localhost:5173
 ```
 
@@ -61,7 +61,7 @@ Open the printed `https://….trycloudflare.com` address on the phone. Every RPC
 
 **Option 2: same Wi-Fi, no tunnel (no camera).**
 
-```powershell
+```bat
 npm run local:lan
 ```
 
