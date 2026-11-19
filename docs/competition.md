@@ -1,82 +1,56 @@
-# Cuộc thi và checklist nộp bài
+# Hackathon rules check and pitch notes
 
-[← Về README](../README.md)
+[← README](../README.md)
 
-Thông tin được đối chiếu ngày **16/11/2026, giờ Việt Nam**.
+These were checked against team1vn.xyz and topics.json on **18/11/2026**. Recheck before submitting, because the organizers may update them.
 
-Nguồn ưu tiên là [website Team1 Vietnam](https://team1vn.xyz/), [FAQ](https://team1vn.xyz/#faq) và [dữ liệu đề tài/quy tắc chính thức](https://team1vn.xyz/topics.json). Nên kiểm tra lại trước khi nộp vì BTC có thể cập nhật.
+- **Deadline:** **23:59, 21/11/2026 (UTC+7)** on team1vn.xyz. Press **Submit**; a saved draft does not count.
+- **What to submit:** a GitHub repo (public, or private with `tuantqse90` invited), Canva or Google Slides, a **2–3 minute** demo video, and any supporting docs.
+- **Access:** every link must open for the judges.
+- **Finals:** top 10, 30/11/2026 at Greenwich Vietnam, Ho Chi Minh City.
 
-| Nội dung | Thông tin trên website BTC lúc đối chiếu |
+Lantern Sea is the team's **own idea**. It is not suggested topic 10 or 11, but it uses the same Game-L1 + C-Chain + ICM design.
+
+## Rule-by-rule
+
+| Rule (topics.json general rules) | How Lantern Sea complies |
 | --- | --- |
-| Đối tượng | Sinh viên đại học tại Việt Nam; miễn phí |
-| Đội | Một người hoặc tối đa **3 thành viên** |
-| Thời gian chương trình | 02–30/11/2026 |
-| Hạn nộp trên team1vn.xyz | **23:59 ngày 21/11/2026, UTC+7** |
-| Nộp bài | Đăng nhập → trang profile/dashboard → **Submit Project**. Lưu draft chưa được tính là nộp; phải nhấn Submit |
-| Số bài | Tối đa 5 dự án/đội; mỗi dự án có bộ tài liệu riêng |
-| Vòng cuối | Top 10 pitching, demo và Q&A trực tiếp ngày 30/11/2026, 09:00–11:30, Greenwich Vietnam, 20 Cộng Hòa, TP.HCM |
+| No randomness, loot boxes or random rewards | Rewards depend only on lane cost, daily streak and puzzle speed. The hash only shapes the map, and crew islands always give their gem. |
+| Avalanche environment | Own Subnet-EVM L1 on Fuji plus Fuji C-Chain. Test tokens only. |
+| Non-custodial by default; pooled funds only behind a multisig | Wallets hold all funds. The only escrow holds one raid's bounty from its two lead captains, has no admin key, and always refunds. **Ask the organizers to confirm that per-raid escrow is acceptable.** |
+| No personal data on-chain | Only addresses, game state and short notes are stored on-chain, and the UI warns players not to write personal information. Parley stores a signature check, not a location. |
+| Declare dev toggles | Demo time (1 charge per minute, 10-minute bosses) is fixed at deployment and shown in the app's banner. **Say it in the first 10 seconds of the pitch and video.** |
+| Mock yield must name a real source | There is **no yield at all**. Bounty money is the lead crew paying for help. No tokens are minted. |
+| Vietnamese law | See below. |
+| Why on-chain, why Avalanche, where the money comes from | See below. |
 
-**Lưu ý lịch không đồng nhất:** [Avalanche Builder Hub](https://docs.avax.network/events/596c0b2d-63aa-4cf0-a0ad-a7e34ddbfdc0) còn hiển thị các mốc nộp khác. Baseline dùng hạn sớm hơn trên website BTC: **21/11**. Kiểm tra dashboard và [nhóm Builders](https://t.me/Team1VNbuilders) để xác nhận lịch mới nhất; không dựa vào lịch cũ để nộp muộn.
+## The three required answers
 
-Hồ sơ cần có:
+- **Why on-chain?** Strangers who meet in person, or who join a raid, need to trust that the bounty is really escrowed and will be paid by damage share without trusting our server. Island claims, notes and the puzzle check are all publicly verifiable.
+- **Why Avalanche?** Exploration, puzzles and attacks create many small transactions, so they run on our own L1 with a free gas token. Money stays on C-Chain with real test USDC. ICM connects the two natively, without a third-party bridge.
+- **Where does the money come from?** Only from players: the lead crew pays helpers for help it chose to buy. There is no sponsor pool, no yield and no minted reward token. Coins and gems cannot be bought or cashed out.
 
-- GitHub repository public; nếu private, mời GitHub user **`tuantqse90`** làm collaborator.
-- Link pitch slides trên Canva hoặc Google Slides.
-- Video demo **2–3 phút** và tài liệu hỗ trợ nếu có.
-- Mọi link phải mở được cho giám khảo. Theo FAQ, tài liệu/repo không truy cập được có thể khiến đội bị loại.
+## Legal and Vietnam notes for the pitch
 
-### Cách chấm điểm
+- This is an educational game prototype on **testnets with test tokens**. It accepts no real money and sells no token.
+- Crypto is not legal tender in Vietnam. A real launch would need legal review, including Vietnam's rules on online games and on exchanging in-game items for money. That is why coins and gems never convert to money.
+- The game gives no financial or legal advice.
 
-| Tiêu chí | Điểm | Baseline hỗ trợ gì |
-| --- | ---: | --- |
-| Technical Implementation | 25 | State machine bất đồng bộ, kế toán tiền gốc/thưởng, test và CI |
-| Avalanche Integration | 25 | Tách Game L1/vault, ABI Teleporter, script Foundry; cần demo ICM thật để chứng minh |
-| Creativity & Innovation | 15 | Đội cần phát triển thêm góc sản phẩm riêng từ baseline |
-| Impact & Use Case | 15 | Học kỳ hạn và quyền rút gốc bằng hình ảnh mùa vụ |
-| Presentation & Pitching | 10 | Kịch bản demo và câu hỏi pitch trong checklist bên dưới |
-| UI/UX & Demo | 10 | 6 ô đất, 3 loại cây, tiến độ, trạng thái chờ messenger, desktop/mobile |
+## Video script (2–3 minutes)
 
-Đây là rubric BTC công bố lúc đọc; không phải cam kết số điểm cho repo.
-
-### Hiểu đúng yêu cầu track game
-
-Quy tắc chung cho phép chạy trên Fuji, L1 riêng hoặc C-Chain. Tuy nhiên, **hai đề tài game gợi ý số 10 và 11 đều ghi own L1 + ICM là Required**. Đề tài 11 yêu cầu game trên L1, vault 3 kỳ hạn trên C-Chain, luồng trồng/thu hoạch qua ICM, frontend 2D và chế độ rút ngắn thời gian được công bố khi demo. Đề tài chỉ là gợi ý; nếu đội tự chọn ý tưởng khác, xác nhận phạm vi với BTC.
-
-Baseline này chọn hướng **đề tài 11**, không chỉ đưa một game single-chain lên Fuji. Những phần còn phải hoàn thành trước khi tuyên bố đạt MVP đề tài được liệt kê trong checklist bên dưới.
-
-### Quy tắc ảnh hưởng trực tiếp đến thiết kế
-
-- Kết quả và thưởng phải xác định từ hành vi/thời gian: không loot box, xổ số, random reward hay cá cược.
-- Demo dùng token test; không nhận tiền thật từ người dùng hoặc bán token ra công chúng.
-- Chỉ đưa trạng thái game, số dư và thông điệp lên chain; không đưa thông tin cá nhân lên chain.
-- Phải công bố ngay đầu pitch nếu có mô phỏng thời gian/yield.
-- Nếu mô phỏng yield, giải thích nguồn tài trợ thực tế; không trình bày mint token mới là lợi suất bền vững.
-- Pitch có phần giới hạn pháp lý theo thể lệ BTC. Dự án này là mô phỏng giáo dục, không cung cấp dịch vụ tài chính.
-- Trả lời được: **Vì sao on-chain? Vì sao Avalanche? Tiền/thưởng đến từ đâu?**
-
-## Checklist để biến baseline thành bài nộp
-
-- [ ] Đăng ký đội, kiểm tra đủ điều kiện và hạn nộp trên dashboard BTC.
-- [ ] Đặt tên, chọn người dùng mục tiêu và thêm điểm khác biệt riêng; baseline tự nó chưa thể hiện đầy đủ sáng tạo của đội.
-- [ ] Có **Game L1 thật**, node/validator hoạt động, native gas test và explorer.
-- [ ] Dùng Teleporter thật với relayer hai chiều; lưu bằng chứng request và ACK cho trồng/thu hoạch.
-- [ ] Công bố mô phỏng thời gian, token và thưởng ngay đầu video/pitch.
-- [ ] Chốt cách đáp ứng vault USDC theo đề tài: bản hiện tại dùng **dUSD thay USDC**, cần ghi rõ với BTC; muốn dùng USDC test phải thay token/flow faucet và kiểm thử lại, không đổi nhãn UI để giả định tương đương.
-- [ ] Nếu có quỹ sponsor thực tế, đặt quyền tài trợ/vận hành sau multisig theo quy tắc BTC. Baseline hiện không có Safe/multisig và chỉ xử lý tiền test.
-- [ ] Test bằng một ví người chơi mới, trên ít nhất desktop và mobile, kiểm tra gas và thao tác đổi mạng.
-- [ ] Public repo hoặc mời `tuantqse90`; mở quyền xem slides/video, kiểm tra bằng cửa sổ chưa đăng nhập.
-- [ ] Ghi rõ code/dependency/asset đã sử dụng. Pixel SVG trong repo tự vẽ; không cần tải asset pack bên ngoài. Nếu thay bằng pack, giữ đúng giấy phép và credit.
-- [ ] Nộp trước **23:59 21/11/2026 UTC+7** theo website lúc đối chiếu và nhấn Submit, không chỉ Save Draft.
-
-### Kịch bản video 2–3 phút
-
-| Thời gian | Nội dung |
+| Time | Scene |
 | --- | --- |
-| 0:00–0:20 | Vấn đề: sinh viên khó hiểu kỳ hạn/yield. Công bố dUSD, thưởng và thời gian mô phỏng; nói rõ local hay ICM thật |
-| 0:20–0:45 | Nối ví, giải thích số dư ví/credits, nạp 100 dUSD |
-| 0:45–1:15 | Trồng rau trên Game L1; chỉ request, xử lý ở Fuji và ACK; UI đổi pending → growing |
-| 1:15–1:45 | Thử nhổ một ô khác để chứng minh hoàn gốc; quay lại cây đủ hạn |
-| 1:45–2:15 | Thu hoạch, credits = 101, rút về ví; mở transaction trên explorer |
-| 2:15–2:45 | Kiến trúc hai chuỗi, test, nguồn quỹ thưởng, hướng phát triển và giới hạn |
+| 0:00–0:15 | "Demo time is sped up: one charge per minute, 10-minute bosses. Test tokens only." Show the banner. |
+| 0:15–0:40 | Claim a home island, sail a ⚓1 lane into the fog, and get 10–20 coins (the range is set by your streak). |
+| 0:40–1:05 | Two phones Parley by QR. The maps merge, and one captain jumps to a crewmate's island for ⚓1. |
+| 1:05–1:35 | A crew lane (⚓4–5) pools charges from both captains. Both solve the sliding puzzle. They land and both get a gem. |
+| 1:35–2:15 | The crew leads a boss raid and escrows 10 USDC on Fuji. Show the ICM messages in both explorers. A helper attacks, the raid is settled, and the helper claims their damage share. |
+| 2:15–2:45 | Architecture slide, the rules check, limitations, and next steps (Bluetooth/NFC proximity, island decoration, seed market for coins). |
 
-Gợi ý trả lời pitch: **On-chain** để xác minh tiền gốc, kỳ hạn và thưởng thay vì tin backend; **Avalanche** để tách game state trên L1 khỏi số dư trên C-Chain và truyền yêu cầu qua ICM; **nguồn thưởng** là ngân sách sponsor nạp trước, demo không tạo thu nhập thực. Chưa tích hợp lending thì không trình bày như đang có doanh thu/lợi suất lending.
+## Submission checklist
+
+- [ ] Fresh deployment on L1 and Fuji ([deployment.md](deployment.md)), hosted over HTTPS, with a real ICM round trip recorded.
+- [ ] Repo public, or `tuantqse90` invited. Slides and video open in a logged-out window.
+- [ ] The pitch opens with the demo-time declaration and covers the three answers and the law notes.
+- [ ] Organizers asked in Telegram about per-raid escrow, and their answer noted in the slides.
+- [ ] Submit pressed before 23:59, 21/11/2026 (UTC+7).

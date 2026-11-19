@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
 
-/// @notice TEST TOKEN ONLY, not Circle USDC. No monetary value. Never deploy on mainnet.
-contract DemoUSD {
-    string public constant name = "Farm Demo USD (TEST ONLY)";
-    string public constant symbol = "dUSD";
+/// @notice LOCAL TEST TOKEN ONLY. Stands in for Circle test USDC on Fuji during local runs. Never deploy on mainnet.
+contract MockUSDC {
+    string public constant name = "Local Test USDC (NOT CIRCLE, NO VALUE)";
+    string public constant symbol = "tUSDC";
     uint8 public constant decimals = 6;
     uint256 public totalSupply;
     mapping(address => uint256) public balanceOf;
@@ -14,13 +14,13 @@ contract DemoUSD {
     event Approval(address indexed owner, address indexed spender, uint256 amount);
 
     constructor() {
-        _mint(msg.sender, 1_000_000e6);
+        _mint(msg.sender, 1_000e6);
     }
 
     function faucet() external {
         require(block.timestamp >= nextFaucetAt[msg.sender], "FAUCET_COOLDOWN");
         nextFaucetAt[msg.sender] = block.timestamp + 1 hours;
-        _mint(msg.sender, 1000e6);
+        _mint(msg.sender, 100e6);
     }
 
     function approve(address spender, uint256 amount) external returns (bool) {

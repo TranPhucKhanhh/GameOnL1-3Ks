@@ -1,9 +1,11 @@
 {
-  "name": "avax-defi-farm-baseline",
-  "version": "0.1.0",
+  "name": "lantern-sea",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.12" },
+  "engines": {
+    "node": ">=22.12"
+  },
   "scripts": {
     "foundry:install": "node scripts/install-foundry.mjs",
     "forge": "node scripts/tool.mjs forge",
@@ -12,6 +14,7 @@
     "test:contracts": "node scripts/tool.mjs forge test -vv",
     "abi": "node scripts/sync-abi.mjs",
     "local": "node scripts/local.mjs",
+    "local:lan": "node scripts/local.mjs --lan",
     "test:e2e": "node scripts/e2e.mjs",
     "test:deploy": "node scripts/test-deploy.mjs",
     "test:ui": "playwright test",
@@ -21,10 +24,16 @@
     "preview": "vite preview web --host 127.0.0.1",
     "check": "npm run test:contracts && npm run abi && npm run build"
   },
-  "dependencies": { "viem": "2.57.20" },
+  "dependencies": {
+    "jsqr": "1.4.0",
+    "phaser": "3.90.0",
+    "qrcode": "1.5.4",
+    "viem": "2.57.20"
+  },
   "devDependencies": {
     "@playwright/test": "1.65.1",
+    "@types/qrcode": "1.5.5",
     "typescript": "5.9.3",
-    "vite": "7.3.1"
+    "vite": "7.3.7"
   }
 }

@@ -1,61 +1,74 @@
-# Chơi và phát triển trên máy
+# Local development
 
-[← Về README](../README.md)
+[← README](../README.md)
 
 ```bat
-cd /d "D:\project\L1"
 npm run local
 ```
 
-Một lệnh sẽ build bằng Forge, đồng bộ ABI, mở hai Anvil, triển khai contract từ artifact Foundry, gắn peer, nạp 10.000 dUSD thưởng, chạy relayer giả lập và mở Vite. Giữ terminal này chạy.
+This one command:
+1. Builds the contracts and syncs the ABIs.
+2. Starts two Anvil chains, one standing in for the **Game L1** (port 8545, chain 31337) and one for **C-Chain** (port 9545, chain 31338).
+3. Deploys every contract with `DEMO_MODE=true`, binds the peers, and runs a **mock ICM relayer** every 0.5 s.
+4. Starts Vite on http://127.0.0.1:5173.
 
-| Thành phần | Giá trị local |
+The browser reaches both chains through Vite's proxy at `/rpc/game` and `/rpc/cchain` (see `web/vite.config.ts`), so the page needs only one port.
+
+| File | Contents |
 | --- | --- |
-| Frontend | http://127.0.0.1:5173 |
-| Game RPC | http://127.0.0.1:8545 |
-| Game EVM chain ID | 31337, symbol GAME |
-| Vault RPC | http://127.0.0.1:9545 |
-| Vault EVM chain ID | 31338, symbol AVAX |
-| Địa chỉ contract và blockchain ID giả lập | `.local/config.json` |
-| Cấu hình frontend tự sinh | `web/public/config.json` |
+| `.local/config.json` | Addresses and absolute RPC URLs (for scripts) |
+| `web/public/config.json` | Same addresses with proxy RPC paths (for the browser) |
 
-### Kết nối ví local
+Both are generated and git-ignored.
 
-Trong profile trình duyệt dùng để thử nghiệm, import **tài khoản Anvil công khai số 1**:
+## Wallets
 
-```text
-Address:     0x70997970C51812dc3A010C7d01b50e0d17dc79C8
-Private key: 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+- **Local guest captain (recommended locally):** a throwaway key kept in the tab's `sessionStorage`, topped up with gas on both Anvil chains. A new tab gives a new captain, so you can play Parley, crew voyages and raids alone with two tabs side by side. Guest wallets are disabled on testnet deployments.
+- **MetaMask / Core:** works too. The app adds and switches networks when it needs to. Local chains reset on every start, so clear the account's activity data in the wallet if it reports a nonce error.
+
+## A full co-op session with two tabs
+
+1. **Tab A and tab B:** each claims its home island.
+2. **Parley:**
+   - Tab A: **Crew → Show my code**, then expand **Copy as text** and copy the code.
+   - Tab B: **Crew → No camera? Paste a code**, paste it, and confirm. Both maps are now shared for 10 minutes.
+3. **Crew voyage:**
+   - Find an island with a purple **⚓4/⚓5 crew** lane. Your home may not have one, so sail first if needed.
+   - Tab A: **Plan crew voyage**, paste tab B's address (Crew tab → "Your address"), and send.
+   - Tab B: **Crew → Join**. Both tabs open the sliding puzzle. Solve both within 60 seconds.
+4. **Raid:**
+   - Tab A: **Raid → Propose to lead** with tab B's address.
+   - Tab B: **Accept**.
+   - Tab A: **Get 100 test USDC**, then **Escrow on C-Chain**. Watch the bounty arrive on L1 through the relay.
+   - A third tab can join as a helper and attack.
+5. **Settle:** after the boss dies or the 10-minute epoch ends, press **Settle**, then **Claim** the USDC.
+
+## Play on a phone
+
+The phone has to reach your PC's dev server. The camera (QR scanning) also needs **HTTPS** unless the page is on `localhost`.
+
+**Option 1: HTTPS tunnel (camera works).** Install Cloudflare's `cloudflared` from Cloudflare's official download page, then run these in a second terminal:
+
+```bat
+npm run local
 ```
 
-**Khóa trên là khóa test ai cũng biết. Không nạp tài sản thật, không dùng trên Fuji/mainnet, không dùng làm ví deployer công khai.** Anvil cấp sẵn gas cho địa chỉ này ở cả hai chuỗi. Nếu ví đã lưu chain ID 31337 với RPC khác, sửa RPC về địa chỉ trong bảng. Bật hiển thị test network trong ví nếu cần.
+```bat
+cloudflared tunnel --url http://localhost:5173
+```
 
-### Đăng nhập và kết nối bằng Core extension
+Open the printed `https://….trycloudflare.com` address on the phone. Every RPC call goes through the same tunnel, through the Vite proxy. Anyone with the link can reach your dev server while the tunnel runs, so stop it when you finish.
 
-Nên dùng một profile trình duyệt riêng cho local. Nếu Core chưa có ví, hoàn thành bước thiết lập ví trong extension trước, rồi import tài khoản Anvil bên trên; app không yêu cầu đăng nhập Core bằng email hoặc nhập seed phrase.
+**Option 2: same Wi-Fi, no tunnel (no camera).**
 
-1. Mở và mở khóa Core extension. Nhấn tên tài khoản đang hoạt động ở phía trên.
-2. Trong **My Wallets**, nhấn dấu **+**, chọn **Import a private key**. Dán **private key Anvil test ở mục trên** trực tiếp vào Core, rồi nhấn **Import**. Có thể đặt tên `Anvil Local` để dễ phân biệt. Các bước import tham khảo [hướng dẫn chính thức của Core](https://support.core.app/en/articles/6821877-core-extension-how-can-i-import-an-account).
-3. Chọn tài khoản vừa import và kiểm tra địa chỉ EVM phải đúng `0x70997970C51812dc3A010C7d01b50e0d17dc79C8`. Tên **Account 1** trong Core không đảm bảo đó là tài khoản Anvil số 1; tạo account mới bằng dấu **+** cũng không thay thế việc import khóa test.
-4. Giữ `npm run local` chạy. Mở http://127.0.0.1:5173, nhấn **Kết nối ví** và cấp quyền cho tài khoản `Anvil Local`. Trên app phải hiện **`● 0x7099…79C8`**.
-5. Khi nhấn nhận dUSD, nạp hoặc rút tiền, chấp nhận **Approve** để chuyển sang **Farm Vault (Anvil)**, chain ID `31338`, RPC `http://127.0.0.1:9545`.
-6. Khi trồng, thu hoạch hoặc nhổ cây, chấp nhận chuyển sang **Farm Game (Anvil)**, chain ID `31337`, RPC `http://127.0.0.1:8545`.
+```bat
+npm run local:lan
+```
 
-Yêu cầu **switch network** là bước đổi mạng bình thường, không phải thông báo giao dịch thất bại. Cùng một địa chỉ ví dùng được trên cả hai mạng, nhưng số dư gas của mỗi mạng độc lập; AVAX trên Fuji không trả phí cho Anvil. Tài khoản test đúng địa chỉ đã được Anvil cấp gas trên cả hai mạng khi khởi động.
+Open `http://<your PC's LAN IP>:5173` on the phone, and use **paste a code** instead of the camera for Parley. Windows may ask to allow Node.js through the firewall.
 
-Nếu trước đó đã kết nối bằng ví thật, ngắt quyền của site local trong phần quản lý kết nối của Core, chọn `Anvil Local`, tải lại trang rồi kết nối lại. Chỉ nhập khóa Anvil công khai vào Core; không dán seed phrase hoặc khóa ví thật vào website, terminal hay file project. Nếu nhiều extension ví cùng hoạt động, chỉ bật Core cho site này để tránh kết nối nhầm provider.
+Two phones, or a phone plus a PC tab, can then Parley by scanning each other's codes.
 
-### Chơi một vòng hoàn chỉnh
+## Reset
 
-1. Mở http://127.0.0.1:5173 và nhấn **Kết nối ví**.
-2. Chọn tài khoản local đúng địa chỉ `0x7099…79C8`. Chấp nhận thêm/chuyển mạng khi UI yêu cầu.
-3. Nhấn **Nhận 1.000 dUSD test**, xác nhận trên chuỗi vault.
-4. Giữ số lượng 100, nhấn **Nạp 100 dUSD vào vault**. Xác nhận hai giao dịch: approve đúng 100, rồi deposit 100.
-5. Chọn Vườn rau, nhấn **Trồng hạt giống** ở một ô đất. Ví chuyển sang Game L1. Chờ ô từ Đang gửi ICM sang Đang lớn.
-6. Đợi khoảng 60 giây kể từ lúc vault xử lý trồng. Nhấn **Thu hoạch**, chờ ACK. Số dư có thể rút trở thành 101 dUSD.
-7. Nhấn **Rút toàn bộ số dư có thể rút** trên chuỗi vault. Ví có 1.001 dUSD; game ghi nhận 1 mùa vụ.
-8. Có thể thử trồng rồi **Nhổ cây**: chỉ gốc được hoàn, không có thưởng.
-
-Không cần import dUSD vào danh sách token của ví để chơi; UI đọc trực tiếp contract. Nếu muốn xem trong ví, lấy địa chỉ `token` ở `.local/config.json`, decimals 6.
-
-**Dừng/reset:** nhấn `Ctrl+C` tại terminal đang chạy. Lần chạy `npm run local` sau tạo chain và trạng thái mới, ghi đè config frontend local. Các config là file sinh tự động, không commit. Khi reset Anvil, nếu ví báo nonce cũ, dùng chức năng xóa dữ liệu hoạt động/nonce của **account test** trong ví. Không chạy đồng thời `local`, `test:e2e` hoặc `test:ui` vì chúng dùng cùng cổng và tự tạo chain.
+Press `Ctrl+C` and run `npm run local` again. Each run starts fresh chains, fresh contracts and a fresh sea, and old guest keys get new balances.
