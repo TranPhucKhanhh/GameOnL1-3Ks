@@ -514,6 +514,7 @@ function raidPanel() {
 
 function cabinetPanel() {
   const addr = who();
+  if (viewAs && !me) return '<div class="card"><p>Loading cabinet…</p></div>';
   if (!addr || !me?.registered) return islandPanel();
   const link = `${location.origin}${location.pathname}?captain=${addr}`;
   return `<div class="card">
@@ -600,7 +601,6 @@ function render() {
   const caret = typing ? { id: typing.id, start: typing.selectionStart, end: typing.selectionEnd } : null;
   const scrollTop = renderedTab === tab ? document.querySelector('#sheet')?.scrollTop ?? 0 : 0;
   renderedTab = tab;
-  const keptOverlay = document.querySelector<HTMLElement>('#overlay-root');
   // Keep what the captain typed and which sections are open across background refreshes.
   const values = new Map<string, string>();
   document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('#ui [id]').forEach(el => {
@@ -615,8 +615,7 @@ function render() {
     <nav class="tabs">${(['island', 'ship', 'crew', 'raid', 'cabinet', 'help'] as Tab[]).map(t => `<button data-tab="${t}" class="${tab === t ? 'on' : ''}">
       <span class="ico">${ICONS[t]}</span>${t === 'island' ? 'Sea' : t === 'cabinet' ? 'Cabinet' : t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</nav>
     <div class="mapctl"><button data-act="zoom-in" aria-label="Zoom in">+</button><button data-act="zoom-out" aria-label="Zoom out">−</button>${inside !== null ? '<button data-act="fit" aria-label="Fit island">⤢</button>' : ''}</div>
-    ${inside !== null ? '<button class="backsea primary" data-act="back-sea">⟵ Back to sea</button>' : ''}
-    <div id="overlay-root"></div>`;
+    ${inside !== null ? '<button class="backsea primary" data-act="back-sea">⟵ Back to sea</button>' : ''}`;
   // After a successful action the forms start clean; otherwise restore what was typed.
   if (!clearForms) for (const [id, v] of values) {
     const el = document.getElementById(id) as HTMLInputElement | null;
@@ -639,16 +638,17 @@ function render() {
   clearFormsApplied = false;
   updateInsets();
   for (const part of ui.querySelectorAll('.hud, #sheet, .tabs, .mapctl, .backsea')) bind(part);
-  // The open puzzle keeps its own DOM so taps are never lost to a background refresh.
-  const root = ui.querySelector<HTMLElement>('#overlay-root')!;
-  const keep = keptOverlay && ((puzzle && keptOverlay.dataset.pid === String(puzzle.id)) || (!puzzle && overlay === 'scan' && keptOverlay.dataset.kind === 'scan'));
-  if (keep) root.replaceWith(keptOverlay!);
-  else renderOverlay();
+  renderOverlay();
 }
+
+let renderedOverlayState = '';
 
 function renderOverlay() {
   const root = document.querySelector<HTMLElement>('#overlay-root');
   if (!root) return;
+  const state = puzzle ? `puzzle:${puzzle.id}:${puzzle.cells.join(',')}:${puzzle.moves.length}:${puzzle.submitting}` : `${overlay}:${qr?.code ?? ''}`;
+  if (state === renderedOverlayState) return;
+  renderedOverlayState = state;
   root.innerHTML = overlayMarkup();
   root.dataset.pid = puzzle ? String(puzzle.id) : '';
   root.dataset.kind = puzzle ? 'puzzle' : overlay;
@@ -852,7 +852,7 @@ async function boot() {
     read<bigint>(config.game, config.coop, coopAbi, 'window').then(Number)]);
   const view = new URLSearchParams(location.search).get('captain');
   if (view && isAddress(view)) { viewAs = view; tab = 'cabinet'; }
-  app.innerHTML = '<div id="sea" class="sea" aria-label="Sea map"></div><div id="ui" class="ui"></div>';
+  app.innerHTML = '<div id="sea" class="sea" aria-label="Sea map"></div><div id="ui" class="ui"></div><div id="overlay-root"></div>';
   map = new SeaMap(document.querySelector('#sea')!, n => enterIsland(n), {
     onTile: t => { pickTile = t; placing = false; tab = 'island'; sheetMin = false; render(); updateMap(); },
     onPole: i => {

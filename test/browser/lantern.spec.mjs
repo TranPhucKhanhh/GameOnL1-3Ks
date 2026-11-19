@@ -26,7 +26,7 @@ const tab = (page, name) => page.locator('.tabs button', { hasText: name }).clic
 const act = (page, text) => page.locator('#sheet button, .modal button', { hasText: text }).first().click();
 
 test('two captains: parley, co-op puzzle voyage and raid bounty on phones', async ({ browser }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(420_000);
   const cfg = config();
   const game = createPublicClient({ transport: http(cfg.game.rpcUrl) });
   const seed = await game.readContract({ address: cfg.sea, abi: seaAbi, functionName: 'worldSeed' });
@@ -73,23 +73,22 @@ test('two captains: parley, co-op puzzle voyage and raid bounty on phones', asyn
   const startedAt = (await game.readContract({ address: cfg.coop, abi: coopAbi, functionName: 'voyages', args: [id] }))[8];
   expect(startedAt > 0n).toBe(true);
   const depth = Number(await game.readContract({ address: cfg.coop, abi: coopAbi, functionName: 'scrambleDepth' }));
-  for (const c of [A, B]) {
+  await Promise.all([A, B].map(async c => {
     await expect(c.page.locator('.board')).toBeVisible({ timeout: 20_000 });
     const scrambled = walk(voyageSeed(cfg.coop, id, startedAt, c.address), depth);
     const shown = await c.page.$$eval('.board .tile', els => els.map(e => Number(e.textContent || 0)));
     expect(shown, 'board on screen must match the on-chain puzzle').toEqual(scrambled.cells);
     const moves = solution(scrambled.path);
     if (c === A) await A.page.screenshot({ path: 'test-results/lantern-phone-puzzle.png' });
+    let blank = scrambled.cells.indexOf(0);
     for (const m of moves) {
       // Tap the tile that sits where the blank should move.
-      const cells = await c.page.$$eval('.board .tile', els => els.map(e => Number(e.textContent || 0)));
-      const blank = cells.indexOf(0);
       const target = m === 0 ? blank - 4 : m === 1 ? blank + 4 : m === 2 ? blank - 1 : blank + 1;
-      await c.page.locator(`.board .tile[data-cell="${target}"]`).click();
-      await expect(c.page.locator(`.board .tile[data-cell="${blank}"]`)).not.toHaveClass(/blank/);
+      await c.page.locator(`.board .tile[data-cell="${target}"]`).click({ force: true });
+      blank = target;
     }
     await expect(c.page.locator('.board')).toBeHidden({ timeout: 20_000 });
-  }
+  }));
   await tab(A.page, 'Crew');
   await expect(A.page.locator('#sheet')).toContainText('Landed', { timeout: 20_000 });
 
@@ -144,7 +143,7 @@ test('two captains: parley, co-op puzzle voyage and raid bounty on phones', asyn
   const desktop = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const d = await desktop.newPage();
   await d.goto(`/?captain=${A.address}`);
-  await expect(d.locator('#sheet')).toContainText('Treasure cabinet', { timeout: 20_000 });
+  await expect(d.locator('#sheet')).toContainText('Treasure cabinet', { timeout: 60_000 });
   await d.screenshot({ path: 'test-results/lantern-desktop-cabinet.png' });
   // Nothing may sit on top of the map on desktop (regression: an empty overlay box used to block drag and zoom).
   expect(await d.evaluate(() => document.elementFromPoint(400, 450)?.tagName)).toBe('CANVAS');

@@ -672,6 +672,43 @@ contract LanternSeaTest {
         vm.prank(bob);
         raid.proposeLead(alice);
     }
+
+    function testBothLeadsFundToCapAndEnforce() public {
+        uint256 raidId = _openRaid();
+        _fund(alice, 60e6, raidId);
+        _fund(bob, 40e6, raidId);
+        _eq(raid.raidView(raidId).bounty, 100e6, "BOUNTY_100");
+        _solvent();
+
+        vm.startPrank(alice);
+        usdc.approve(address(escrow), 1e6);
+        vm.expectRevert(RaidEscrow.BadAmount.selector);
+        escrow.fund(raidId, 1e6);
+        vm.stopPrank();
+    }
+
+    function testSettleLastRaidPreviousEpoch() public {
+        uint256 raidId = _openRaid();
+        _fund(alice, 50e6, raidId);
+        address helper = address(0xBEEF);
+        _register(helper);
+        vm.prank(helper);
+        raid.attack(raidId);
+
+        // Advance into next epoch
+        vm.warp(RAID_TIME + 601);
+        uint256 nextRaidId = raid.currentRaidId();
+        _ok(nextRaidId > raidId, "NEXT_EPOCH");
+
+        // Anyone settles the previous epoch's raid
+        vm.recordLogs();
+        raid.settle(raidId);
+        _toEscrow(_message(address(gameMessenger)));
+
+        _eq(escrow.claimable(alice), 50e6, "PREV_EPOCH_FULL_REFUND");
+        _eq(escrow.claimable(helper), 0, "PREV_EPOCH_NO_HELPER_PAY");
+        _solvent();
+    }
 }
 
 contract PuzzleProbe {
