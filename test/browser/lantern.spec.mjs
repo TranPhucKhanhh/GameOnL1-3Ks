@@ -98,6 +98,9 @@ test('two captains: parley, co-op puzzle voyage and raid bounty on phones', asyn
   await A.page.locator('#sheet button', { hasText: 'Go ashore' }).click();
   await expect(A.page.locator('.backsea')).toBeVisible();
   await A.page.fill('#note', 'First lantern lit on Pearl Bluff!');
+  // The co-op reward may still be arriving; the button enables once coins cover the cost (while the field keeps focus).
+  await expect(A.page.locator('#sheet button', { hasText: 'Build note pole' })).toBeEnabled({ timeout: 20_000 });
+  await expect(A.page.locator('#note')).toHaveValue('First lantern lit on Pearl Bluff!');
   const coinsBefore = Number((await A.page.locator('.meter.coin').innerText()).replace(/\D/g, ''));
   await act(A.page, 'Build note pole');
   await expect(A.page.locator('#sheet .notes')).toContainText('Pole #1 · centre', { timeout: 20_000 });
