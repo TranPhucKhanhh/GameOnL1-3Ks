@@ -86,6 +86,7 @@ let busy = '', notice = '', noticeError = false, clearForms = false;
 let coopForm: { dir: number } | null = null;
 let sheetMin = false;
 let renderedTab: Tab | null = null;
+let renderedSheet = '', clearFormsApplied = false;
 const txs: { hash: string; label: string; network: Network }[] = [];
 let map: SeaMap | null = null;
 let scanStop: (() => void) | null = null;
@@ -583,12 +584,20 @@ function overlayMarkup() {
 function render() {
   if (!config) return;
   const focused = document.activeElement as HTMLElement | null;
-  if (focused && ['INPUT', 'TEXTAREA', 'SELECT'].includes(focused.tagName) && !busy && document.querySelector('#sheet')?.contains(focused)) {
-    // Do not wipe a field the captain is typing in; refresh the HUD only.
+  const typing = focused && ['INPUT', 'TEXTAREA', 'SELECT'].includes(focused.tagName) && !!focused.id
+    && !!document.querySelector('#sheet')?.contains(focused) ? focused as HTMLInputElement : null;
+  const panel = tab === 'island' ? islandPanel() : tab === 'ship' ? shipPanel() : tab === 'crew' ? crewPanel()
+    : tab === 'raid' ? raidPanel() : tab === 'cabinet' ? cabinetPanel() : helpPanel();
+  const sheetHtml = panel + (busy || notice) + String(noticeError) + String(sheetMin);
+  if (typing && sheetHtml === renderedSheet) {
+    // The captain is typing and the panel would not change: refresh only the HUD so the field is untouched.
     document.querySelector('.hud')!.outerHTML = hud();
     bind(document.querySelector('.hud')!);
     return;
   }
+  renderedSheet = sheetHtml;
+  // Something in the panel changed (coins arrived, a spot was picked...): redraw it, then put the cursor back.
+  const caret = typing ? { id: typing.id, start: typing.selectionStart, end: typing.selectionEnd } : null;
   const scrollTop = renderedTab === tab ? document.querySelector('#sheet')?.scrollTop ?? 0 : 0;
   renderedTab = tab;
   const keptOverlay = document.querySelector<HTMLElement>('#overlay-root');
@@ -598,8 +607,6 @@ function render() {
     if ('value' in el && el.value !== undefined && ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName)) values.set(el.id, el.value);
   });
   const openDetails = new Set([...document.querySelectorAll<HTMLDetailsElement>('#ui details[open] > summary')].map(s => s.textContent ?? ''));
-  const panel = tab === 'island' ? islandPanel() : tab === 'ship' ? shipPanel() : tab === 'crew' ? crewPanel()
-    : tab === 'raid' ? raidPanel() : tab === 'cabinet' ? cabinetPanel() : helpPanel();
   const ui = document.querySelector('#ui')!;
   ui.innerHTML = `${hud()}
     <div class="demo-flag">${demo ? 'DEMO TIME: 1 charge/min · 10-min bosses · ' : ''}TEST TOKENS ONLY · ${config.mode === 'local' ? 'LOCAL CHAINS + MOCK ICM' : 'GAME L1 + FUJI VIA ICM'}</div>
@@ -615,12 +622,21 @@ function render() {
     const el = document.getElementById(id) as HTMLInputElement | null;
     if (el && v !== '') el.value = v;
   }
+  clearFormsApplied = clearForms;
   clearForms = false;
   document.querySelectorAll<HTMLDetailsElement>('#ui details').forEach(d => {
     if (openDetails.has(d.querySelector('summary')?.textContent ?? '')) d.open = true;
   });
   const sheet = document.querySelector('#sheet');
   if (sheet) sheet.scrollTop = scrollTop;
+  if (caret && !clearFormsApplied) {
+    const el = document.getElementById(caret.id) as HTMLInputElement | null;
+    if (el) {
+      el.focus({ preventScroll: true });
+      try { if (caret.start !== null) el.setSelectionRange(caret.start, caret.end); } catch { /* not a text field */ }
+    }
+  }
+  clearFormsApplied = false;
   updateInsets();
   for (const part of ui.querySelectorAll('.hud, #sheet, .tabs, .mapctl, .backsea')) bind(part);
   // The open puzzle keeps its own DOM so taps are never lost to a background refresh.
