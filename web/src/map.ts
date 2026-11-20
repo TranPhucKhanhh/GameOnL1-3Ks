@@ -35,34 +35,45 @@ function panZoom(scene: Phaser.Scene, onTap: (wx: number, wy: number) => void, m
   let moved = false;
   const input = scene.input;
   input.addPointer(1);
+  const syncPinch = () => {
+    const p1 = input.pointer1, p2 = input.pointer2;
+    if (!p1.isDown || !p2.isDown) return false;
+    const dist = Phaser.Math.Distance.Between(p1.x, p1.y, p2.x, p2.y);
+    const cam = scene.cameras.main;
+    if (!pinch) {
+      if (dist > 0) pinch = { dist, zoom: cam.zoom };
+    } else if (dist > 0 && pinch.dist > 0) {
+      cam.setZoom(Phaser.Math.Clamp(pinch.zoom * dist / pinch.dist, minZoom, maxZoom));
+    }
+    drag = null;
+    moved = true;
+    return true;
+  };
   input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+    if (syncPinch()) return;
     moved = false;
     drag = { x: p.x, y: p.y, sx: scene.cameras.main.scrollX, sy: scene.cameras.main.scrollY };
   });
   input.on('pointermove', (p: Phaser.Input.Pointer) => {
-    const cam = scene.cameras.main;
-    const p1 = input.pointer1, p2 = input.pointer2;
-    if (p1.isDown && p2.isDown) {
-      const dist = Phaser.Math.Distance.Between(p1.x, p1.y, p2.x, p2.y);
-      if (!pinch) pinch = { dist, zoom: cam.zoom };
-      cam.setZoom(Phaser.Math.Clamp(pinch.zoom * dist / pinch.dist, minZoom, maxZoom));
-      moved = true;
-      return;
-    }
+    if (syncPinch()) return;
     if (!p.isDown || !drag) return;
+    const cam = scene.cameras.main;
     const dx = p.x - drag.x, dy = p.y - drag.y;
     if (Math.abs(dx) + Math.abs(dy) > 8) moved = true;
     cam.scrollX = drag.sx - dx / cam.zoom;
     cam.scrollY = drag.sy - dy / cam.zoom;
   });
-  input.on('pointerup', (p: Phaser.Input.Pointer) => {
-    if (!input.pointer1.isDown && !input.pointer2.isDown) pinch = null;
-    const tap = !moved && drag;
+  const endPointer = (p: Phaser.Input.Pointer, cancelled = false) => {
+    if (!input.pointer1.isDown || !input.pointer2.isDown) pinch = null;
+    const tap = !cancelled && !moved && drag;
     drag = null;
     if (!tap) return;
     const wp = scene.cameras.main.getWorldPoint(p.x, p.y);
     onTap(wp.x, wp.y);
-  });
+  };
+  input.on('pointerup', (p: Phaser.Input.Pointer) => endPointer(p));
+  input.on('pointerupoutside', (p: Phaser.Input.Pointer) => endPointer(p, true));
+  input.on('pointercancel', (p: Phaser.Input.Pointer) => endPointer(p, true));
   input.on('wheel', (_p: unknown, _o: unknown, _dx: number, dy: number) => {
     const cam = scene.cameras.main;
     cam.setZoom(Phaser.Math.Clamp(cam.zoom * (dy > 0 ? 0.9 : 1.1), minZoom, maxZoom));
@@ -625,6 +636,10 @@ export class SeaMap {
       banner: false,
       input: { mouse: { preventDefaultWheel: true } }
     });
+    // iOS Safari ignores viewport user-scalable=no; block native page pinch on the map container.
+    const stopGesture = (e: Event) => e.preventDefault();
+    parent.addEventListener('gesturestart', stopGesture, { passive: false });
+    parent.addEventListener('gesturechange', stopGesture, { passive: false });
   }
 
   update(d: MapData) { this.scene.setData(d); }
@@ -659,7 +674,7 @@ export class SeaMap {
   zoomBy(f: number) {
     const scene = this.inside ? this.islandScene : this.scene;
     const cam = scene.cameras?.main;
-    if (cam) cam.zoomTo(Phaser.Math.Clamp(cam.zoom * f, 0.3, 2.5), 160);
+    if (cam) cam.zoomTo(Phaser.Math.Clamp(cam.zoom * f, 0.35, 2.4), 160, 'Sine.easeOut', true);
   }
   fitIsland() { this.islandScene.fit(); }
 }
