@@ -273,9 +273,10 @@ async function refresh() {
 function updateInsets() {
   const hud = document.querySelector('.hud')?.getBoundingClientRect();
   const sheet = document.querySelector('#sheet')?.getBoundingClientRect();
-  if (!map || !hud || !sheet) return;
+  const sea = document.querySelector('#sea')?.getBoundingClientRect();
+  if (!map || !hud || !sheet || !sea) return;
   const side = sheet.left > 0 && sheet.top <= hud.bottom + 4; // desktop: panel on the right
-  map.setInsets(hud.bottom, side ? innerWidth - sheet.left : 0, side ? 0 : innerHeight - sheet.top);
+  map.setInsets(hud.bottom, side ? Math.max(0, sea.right - sheet.left) : 0, side ? 0 : innerHeight - sheet.top);
 }
 
 function updateMap() {
