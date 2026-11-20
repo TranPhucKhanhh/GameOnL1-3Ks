@@ -53,8 +53,8 @@ export async function findCaptainKey(cfg, prefix, predicate) {
   }
 }
 
-export async function captain(browser, key) {
-  const context = await browser.newContext({ viewport: PHONE, deviceScaleFactor: DPR, hasTouch: true });
+export async function captain(browser, key, contextOptions = { viewport: PHONE, deviceScaleFactor: DPR, hasTouch: true }) {
+  const context = await browser.newContext(contextOptions);
   await context.addInitScript(k => sessionStorage.setItem('lantern-guest-key', k), key);
   const page = await context.newPage();
   const errors = [];
@@ -71,8 +71,8 @@ export async function registerCaptain(captainHandle) {
 }
 
 /** Launch, register, run `fn`, assert zero page errors, and close all contexts. */
-export async function withCaptains(browser, keys, fn) {
-  const handles = await Promise.all(keys.map(key => captain(browser, key)));
+export async function withCaptains(browser, keys, fn, contextOptions) {
+  const handles = await Promise.all(keys.map(key => captain(browser, key, contextOptions)));
   try {
     for (const handle of handles) await registerCaptain(handle);
     await fn(handles);
