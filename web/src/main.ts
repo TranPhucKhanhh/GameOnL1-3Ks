@@ -86,7 +86,8 @@ let busy = '', notice = '', noticeError = false, clearForms = false;
 let coopForm: { dir: number } | null = null;
 let sheetMin = false;
 let renderedTab: Tab | null = null;
-let renderedSheet = '', clearFormsApplied = false;
+let renderedInside: boolean | null = null;
+let renderedHud = '', renderedSheet = '', renderedOverlayKey = '', clearFormsApplied = false;
 const txs: { hash: string; label: string; network: Network }[] = [];
 let map: SeaMap | null = null;
 let scanStop: (() => void) | null = null;
@@ -550,6 +551,8 @@ function helpPanel() {
   </div>`;
 }
 
+const qrExpiryText = (expiry: number) => `Valid for ${left(expiry - now())}. Let your crewmate scan it.`;
+
 function overlayMarkup() {
   if (puzzle) {
     const t = puzzle.deadline - now();
@@ -565,7 +568,7 @@ function overlayMarkup() {
   if (overlay === 'qr' && qr) {
     return `<div class="overlay"><div class="modal">
       <h2>Your Parley code</h2><img class="qr" src="${qr.url}" alt="Parley QR code">
-      <p class="muted">Valid for ${left(qr.expiry - now())}. Let your crewmate scan it.</p>
+      <p class="muted" id="qr-expiry">${qrExpiryText(qr.expiry)}</p>
       <details><summary>Copy as text</summary><code class="copy" data-copy="${esc(qr.code)}">${esc(qr.code.slice(0, 64))}…</code></details>
       <div class="row"><button data-act="show-qr">New code</button><button data-act="close-overlay">Close</button></div>
     </div></div>`;
@@ -581,21 +584,38 @@ function overlayMarkup() {
 
 // ------------------------------------------------------------------ render
 
+function overlayStateKey() {
+  if (puzzle) return `puzzle:${puzzle.id}:${puzzle.moves.length}:${puzzle.submitting}`;
+  if (overlay === 'qr' && qr) return `qr:${qr.code}`;
+  return overlay;
+}
+
 function render() {
   if (!config) return;
   const focused = document.activeElement as HTMLElement | null;
   const typing = focused && ['INPUT', 'TEXTAREA', 'SELECT'].includes(focused.tagName) && !!focused.id
     && !!document.querySelector('#sheet')?.contains(focused) ? focused as HTMLInputElement : null;
+  const hudHtml = hud();
   const panel = tab === 'island' ? islandPanel() : tab === 'ship' ? shipPanel() : tab === 'crew' ? crewPanel()
     : tab === 'raid' ? raidPanel() : tab === 'cabinet' ? cabinetPanel() : helpPanel();
   const sheetHtml = panel + (busy || notice) + String(noticeError) + String(sheetMin);
-  if (typing && sheetHtml === renderedSheet) {
-    // The captain is typing and the panel would not change: refresh only the HUD so the field is untouched.
-    document.querySelector('.hud')!.outerHTML = hud();
-    bind(document.querySelector('.hud')!);
+  const inIsland = inside !== null;
+  const nextOverlayKey = overlayStateKey();
+  const sheetUnchanged = !clearForms && !!document.querySelector('#sheet') && sheetHtml === renderedSheet
+    && renderedTab === tab && renderedInside === inIsland;
+  if (sheetUnchanged) {
+    // Nothing in the panel/nav changed: refresh only the HUD (when changed) and overlay state so open DOM nodes stay attached.
+    if (hudHtml !== renderedHud) {
+      renderedHud = hudHtml;
+      document.querySelector('.hud')!.outerHTML = hudHtml;
+      bind(document.querySelector('.hud')!);
+    }
+    if (nextOverlayKey !== renderedOverlayKey) renderOverlay();
     return;
   }
+  renderedHud = hudHtml;
   renderedSheet = sheetHtml;
+  renderedInside = inIsland;
   // Something in the panel changed (coins arrived, a spot was picked...): redraw it, then put the cursor back.
   const caret = typing ? { id: typing.id, start: typing.selectionStart, end: typing.selectionEnd } : null;
   const scrollTop = renderedTab === tab ? document.querySelector('#sheet')?.scrollTop ?? 0 : 0;
@@ -608,14 +628,14 @@ function render() {
   });
   const openDetails = new Set([...document.querySelectorAll<HTMLDetailsElement>('#ui details[open] > summary')].map(s => s.textContent ?? ''));
   const ui = document.querySelector('#ui')!;
-  ui.innerHTML = `${hud()}
+  ui.innerHTML = `${hudHtml}
     <div class="demo-flag">${demo ? 'DEMO TIME: 1 charge/min · 10-min bosses · ' : ''}TEST TOKENS ONLY · ${config.mode === 'local' ? 'LOCAL CHAINS + MOCK ICM' : 'GAME L1 + FUJI VIA ICM'}</div>
     <section id="sheet" class="sheet ${sheetMin ? 'min' : ''}"><button class="grip" data-act="grip" aria-label="${sheetMin ? 'Expand panel' : 'Collapse panel'}">${sheetMin ? '▴' : '▾'}</button>${panel}
       <div class="notice ${noticeError ? 'error' : ''}" role="status" aria-live="polite">${esc(busy || notice)}</div></section>
     <nav class="tabs">${(['island', 'ship', 'crew', 'raid', 'cabinet', 'help'] as Tab[]).map(t => `<button data-tab="${t}" class="${tab === t ? 'on' : ''}">
       <span class="ico">${ICONS[t]}</span>${t === 'island' ? 'Sea' : t === 'cabinet' ? 'Cabinet' : t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</nav>
-    <div class="mapctl"><button data-act="zoom-in" aria-label="Zoom in">+</button><button data-act="zoom-out" aria-label="Zoom out">−</button>${inside !== null ? '<button data-act="fit" aria-label="Fit island">⤢</button>' : ''}</div>
-    ${inside !== null ? '<button class="backsea primary" data-act="back-sea">⟵ Back to sea</button>' : ''}
+    <div class="mapctl"><button data-act="zoom-in" aria-label="Zoom in">+</button><button data-act="zoom-out" aria-label="Zoom out">−</button>${inIsland ? '<button data-act="fit" aria-label="Fit island">⤢</button>' : ''}</div>
+    ${inIsland ? '<button class="backsea primary" data-act="back-sea">⟵ Back to sea</button>' : ''}
     <div id="overlay-root"></div>`;
   // After a successful action the forms start clean; otherwise restore what was typed.
   if (!clearForms) for (const [id, v] of values) {
@@ -639,9 +659,9 @@ function render() {
   clearFormsApplied = false;
   updateInsets();
   for (const part of ui.querySelectorAll('.hud, #sheet, .tabs, .mapctl, .backsea')) bind(part);
-  // The open puzzle keeps its own DOM so taps are never lost to a background refresh.
+  // Keep any active overlay DOM intact across background panel refreshes when its state is unchanged.
   const root = ui.querySelector<HTMLElement>('#overlay-root')!;
-  const keep = keptOverlay && ((puzzle && keptOverlay.dataset.pid === String(puzzle.id)) || (!puzzle && overlay === 'scan' && keptOverlay.dataset.kind === 'scan'));
+  const keep = keptOverlay && keptOverlay.dataset.key === nextOverlayKey && nextOverlayKey !== 'none';
   if (keep) root.replaceWith(keptOverlay!);
   else renderOverlay();
 }
@@ -649,9 +669,10 @@ function render() {
 function renderOverlay() {
   const root = document.querySelector<HTMLElement>('#overlay-root');
   if (!root) return;
+  const key = overlayStateKey();
+  renderedOverlayKey = key;
   root.innerHTML = overlayMarkup();
-  root.dataset.pid = puzzle ? String(puzzle.id) : '';
-  root.dataset.kind = puzzle ? 'puzzle' : overlay;
+  root.dataset.key = key;
   bind(root);
   if (overlay === 'scan' && !scanStop) void startScan();
 }
@@ -881,7 +902,10 @@ async function boot() {
       const t = puzzle.deadline - now();
       const el = document.querySelector('.timer');
       if (el) { el.textContent = left(Math.max(0, t)); el.classList.toggle('urgent', t < 15); }
-    } else if (overlay === 'qr') renderOverlay();
+    } else if (overlay === 'qr' && qr) {
+      const el = document.querySelector('#qr-expiry');
+      if (el) el.textContent = qrExpiryText(qr.expiry);
+    }
   }, 1000);
 }
 

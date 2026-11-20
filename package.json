@@ -22,7 +22,8 @@
     "dev": "vite web --host 127.0.0.1",
     "build": "tsc --noEmit && vite build web",
     "preview": "vite preview web --host 127.0.0.1",
-    "check": "npm run test:contracts && npm run abi && npm run build"
+    "lint": "node scripts/lint.mjs",
+    "check": "npm run lint && npm run test:contracts && npm run abi && npm run build"
   },
   "dependencies": {
     "jsqr": "1.4.0",
