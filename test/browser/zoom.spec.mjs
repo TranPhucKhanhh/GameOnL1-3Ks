@@ -42,7 +42,7 @@ async function pinch(cdp, centerX, centerY, startHalfDist, endHalfDist, steps = 
   await send('touchEnd', endHalfDist);
 }
 
-test('mobile: pinch-to-zoom and +/- buttons zoom the sea map and island without zooming the page', async ({ browser }) => {
+test('mobile: pinch-to-zoom and +/- buttons zoom the sea map, the island keeps a fixed size, the page never zooms', async ({ browser }) => {
   test.setTimeout(120_000);
   const { context, page, errors } = await openPhoneCaptain(browser, 'lantern-zoom-test-1');
   try {
@@ -82,13 +82,12 @@ test('mobile: pinch-to-zoom and +/- buttons zoom the sea map and island without 
     // 5. Enter island and verify both pinch-to-zoom and +/- buttons work on the island view
     await page.locator('#sheet button', { hasText: 'Go ashore' }).click();
     await expect(page.locator('[data-act="back-sea"]')).toBeVisible({ timeout: 10_000 });
+    // The island has a fixed size ashore (#6): pinch does nothing and the zoom buttons are hidden.
     const islZoomBefore = await getSceneZoom(page, 'island');
     await pinch(cdp, centerX, centerY, 30, 110);
-    await expect.poll(() => getSceneZoom(page, 'island')).toBeGreaterThan(islZoomBefore * 1.15);
-    const islZoomAfterPinch = await getSceneZoom(page, 'island');
-
-    await page.locator('[data-act="zoom-out"]').tap();
-    await expect.poll(() => getSceneZoom(page, 'island')).toBeLessThan(islZoomAfterPinch * 0.9);
+    await page.waitForFunction(() => true); // let the input settle
+    expect(await getSceneZoom(page, 'island')).toBeCloseTo(islZoomBefore, 5);
+    await expect(page.locator('[data-act="zoom-in"]')).toHaveCount(0);
 
     expect(errors).toEqual([]);
   } finally {

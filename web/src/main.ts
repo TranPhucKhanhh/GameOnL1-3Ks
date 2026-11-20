@@ -70,6 +70,9 @@ let partnerVisited = new Set<number>();
 let selected: number | null = null;
 let inside: number | null = null; // island whose interior is on screen
 let placing = false, pickTile: number | null = null, selectedNote: number | null = null, focusLane: number | null = null;
+// Speech bubble over a note pole: read a note, or write a new one right on the sign.
+type Bubble = { kind: 'read'; index: number } | { kind: 'write'; tile: number };
+let bubble: Bubble | null = null, noteDraft = '', bubbleKey = '';
 let island: { finder: Address; notes: Note[]; homes: Address[] } | null = null;
 let tab: Tab = 'island';
 let stats: Stats | null = null, equipped: number[] = [0, 0, 0, 0, 0], dmgLevel = 0, multLevel = 0;
@@ -294,14 +297,99 @@ function islandData(n: number): IslandData {
       return { dir: l.dir, cost: l.cost, coop: l.coop, angle: Math.atan2(to.y - from.y, to.x - from.x),
         label: visited.includes(l.to) ? islandName(l.to) : '?' };
     }) : [],
-    placing, pick: pickTile, selectedPole: selectedNote
+    placing: inside === n && canWriteHere(n) && (island?.notes.length ?? 0) > 0,
+    pick: bubble?.kind === 'write' && bubble.tile !== CENTER_TILE ? bubble.tile : null,
+    selectedPole: bubble?.kind === 'read' ? bubble.index : selectedNote
   };
+}
+
+/** May the signed-in captain plant a note pole on this island? (visited, and no pole of theirs yet) */
+function canWriteHere(n: number) {
+  return !!signer && !viewAs && !!me?.registered && visited.includes(n) && selected === n
+    && !!island && !island.notes.some(x => mine(x.author));
+}
+
+const byteLen = (t: string) => new TextEncoder().encode(t).length;
+
+function openBubble(b: Bubble) {
+  bubble = b;
+  bubbleKey = '';
+  renderBubble();
+  updateMap();
+  if (b.kind === 'write') document.querySelector<HTMLTextAreaElement>('#bubble-text')?.focus({ preventScroll: true });
+}
+
+function closeBubble() {
+  if (!bubble) return;
+  bubble = null;
+  renderBubble();
+  updateMap();
+}
+
+function bubbleMarkup(b: Bubble) {
+  const notes = island?.notes ?? [];
+  if (b.kind === 'read') {
+    const x = notes[b.index];
+    if (!x) return '';
+    return `<button class="bubble-x" data-act="close-bubble" aria-label="Close">×</button>
+      <span class="note-meta">Pole #${b.index + 1}${same(x.author, island?.finder) ? ' · First discoverer' : ''} · ${name(x.author)} · ${new Date(Number(x.at) * 1000).toLocaleDateString()}</span>
+      <p class="bubble-text">${esc(x.text)}</p>`;
+  }
+  const first = notes.length === 0;
+  const blocker = (me?.coins ?? 0n) < BigInt(NOTE_COST) ? `You need ${NOTE_COST} coins. Sail to new islands to earn them.` : '';
+  const count = byteLen(noteDraft);
+  return `<button class="bubble-x" data-act="close-bubble" aria-label="Close">×</button>
+    <span class="note-meta">${first ? 'First pole · centre of the island' : 'Your pole · this spot'}</span>
+    <textarea id="bubble-text" maxlength="140" rows="3" placeholder="Write your note (public forever, no personal info)">${esc(noteDraft)}</textarea>
+    <div class="bubble-row"><span id="bubble-count" class="${count > 140 ? 'over' : ''}">${count}/140</span>
+      <button class="primary" data-act="note" ${blocker || !noteDraft.trim() || count > 140 || busy ? 'disabled' : ''}>Build pole · ${COIN}${NOTE_COST}</button></div>
+    ${blocker ? `<p class="hint">${blocker}</p>` : ''}`;
+}
+
+/** Draw (when its content changed) and position the bubble above its sign. */
+function renderBubble() {
+  const el = document.querySelector<HTMLElement>('#bubble');
+  if (!el) return;
+  const notes = island?.notes ?? [];
+  const tile = !bubble ? -1 : bubble.kind === 'read' ? Number(notes[bubble.index]?.tile ?? -1) : bubble.tile;
+  const pos = bubble && inside !== null && inside === selected && tile >= 0 ? map?.tileScreen(tile) : null;
+  if (!bubble || !pos) { el.hidden = true; el.innerHTML = ''; bubbleKey = ''; return; }
+  const key = JSON.stringify([bubble, notes.length, String(me?.coins ?? 0n), !!busy]);
+  if (key !== bubbleKey) {
+    const typing = document.activeElement?.id === 'bubble-text' ? document.activeElement as HTMLTextAreaElement : null;
+    const caret = typing ? [typing.selectionStart, typing.selectionEnd] as const : null;
+    bubbleKey = key;
+    el.innerHTML = bubbleMarkup(bubble);
+    el.className = `bubble ${bubble.kind}`;
+    bind(el);
+    const ta = el.querySelector<HTMLTextAreaElement>('#bubble-text');
+    if (ta) {
+      ta.addEventListener('input', () => {
+        noteDraft = ta.value;
+        const n = byteLen(noteDraft);
+        const counter = el.querySelector('#bubble-count');
+        if (counter) { counter.textContent = `${n}/140`; counter.classList.toggle('over', n > 140); }
+        const btn = el.querySelector<HTMLButtonElement>('[data-act="note"]');
+        if (btn) btn.disabled = !noteDraft.trim() || n > 140 || (me?.coins ?? 0n) < BigInt(NOTE_COST) || !!busy;
+      });
+      if (caret) { ta.focus({ preventScroll: true }); ta.setSelectionRange(caret[0], caret[1]); }
+    }
+  }
+  el.hidden = false;
+  // Centre over the sign, keep inside the screen, flip below the sign if there is no room above.
+  const w = el.offsetWidth, h = el.offsetHeight, hudBottom = document.querySelector('.hud')?.getBoundingClientRect().bottom ?? 0;
+  const x = Math.min(Math.max(pos.x, w / 2 + 8), innerWidth - w / 2 - 8);
+  const above = pos.y - h - 14 > hudBottom + 4;
+  el.style.left = `${x}px`;
+  el.style.top = `${above ? pos.y - h - 14 : pos.y + 70}px`;
+  el.classList.toggle('below', !above);
+  el.style.setProperty('--tail', `${pos.x - x}px`);
 }
 
 /** The ship sails across the sea to the island (camera follows), the island pops out of the fog, then we go ashore. */
 async function voyageTo(from: number, to: number) {
   const coinsBefore = me?.coins ?? 0n;
-  inside = null; placing = false; pickTile = null;
+  inside = null; placing = false; pickTile = null; bubble = null;
   busy = 'Sailing…'; render();
   await map?.sailTo(from, to);
   if (!visited.includes(to)) visited = [...visited, to];
@@ -317,7 +405,7 @@ async function voyageTo(from: number, to: number) {
 
 function enterIsland(n: number) {
   selected = n; inside = n; island = null; tab = 'island'; coopForm = null; sheetMin = false;
-  placing = false; pickTile = null; selectedNote = null; focusLane = null;
+  placing = false; pickTile = null; selectedNote = null; focusLane = null; bubble = null;
   renderedTab = null; // start the panel at the top for the new island
   render();
   void loadIsland(n).then(() => { render(); updateMap(); });
@@ -387,17 +475,9 @@ function islandPanel() {
   const noteRows = notes.map((x, i) => `<li class="${selectedNote === i ? 'sel' : ''}" id="note-${i}" data-act="pick-note" data-i="${i}"><span class="note-meta">Pole #${i + 1} · ${Number(x.tile) === CENTER_TILE ? 'centre' : 'by the shore'} ${same(x.author, finder) ? '<b class="first">· First discoverer</b>' : ''} · ${name(x.author)} · ${new Date(Number(x.at) * 1000).toLocaleString()}</span>${esc(x.text)}</li>`).join('');
   const canNote = isMine && !notes.some(x => mine(x.author));
   const firstPole = notes.length === 0;
-  const coins = me.coins;
-  const buildReady = coins >= BigInt(NOTE_COST) && (firstPole || pickTile !== null) && !busy;
-  const noteForm = canNote ? `<div class="note-form">
-      <textarea id="note" maxlength="140" rows="2" placeholder="Write your note (public forever, no personal info)"></textarea>
-      <p class="hint">${firstPole ? 'You are first here: your pole stands in the centre of the island, with a lantern on top.'
-        : pickTile !== null ? 'Spot chosen. Build your pole there, or tap another glowing spot.'
-        : 'The centre is taken. Choose a free spot on the island for your pole.'}</p>
-      ${firstPole ? '' : `<button data-act="place">${placing ? 'Cancel choosing' : pickTile !== null ? 'Choose another spot' : 'Choose a spot on the island'}</button>`}
-      <button class="primary" data-act="note" ${buildReady ? '' : 'disabled'}>Build note pole · ${COIN}${NOTE_COST}</button>
-      ${coins < BigInt(NOTE_COST) ? `<p class="hint">You need ${NOTE_COST} coins. Sail to new islands to earn them.</p>` : ''}
-    </div>` : '';
+  const noteForm = canNote ? `<p class="hint">${inside === n
+    ? (firstPole ? 'Tap the "?" sign in the centre of the island to write the first note.' : 'Tap a glowing spot on the island to plant your note pole.')
+    : 'Go ashore to plant your note pole.'} A pole costs ${NOTE_COST} coins.</p>` : '';
   return `<div class="card">
     <div class="island-head"><h2>${esc(islandName(n))}</h2><span class="muted">#${n}</span></div>
     ${inside !== n ? `<button class="go wide" data-act="enter">Go ashore</button>` : ''}
@@ -592,6 +672,7 @@ function overlayStateKey() {
 
 function render() {
   if (!config) return;
+  queueMicrotask(renderBubble); // keep the speech bubble on its sign
   const focused = document.activeElement as HTMLElement | null;
   const typing = focused && ['INPUT', 'TEXTAREA', 'SELECT'].includes(focused.tagName) && !!focused.id
     && !!document.querySelector('#sheet')?.contains(focused) ? focused as HTMLInputElement : null;
@@ -634,7 +715,7 @@ function render() {
       <div class="notice ${noticeError ? 'error' : ''}" role="status" aria-live="polite">${esc(busy || notice)}</div></section>
     <nav class="tabs">${(['island', 'ship', 'crew', 'raid', 'cabinet', 'help'] as Tab[]).map(t => `<button data-tab="${t}" class="${tab === t ? 'on' : ''}">
       <span class="ico">${ICONS[t]}</span>${t === 'island' ? 'Sea' : t === 'cabinet' ? 'Cabinet' : t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</nav>
-    <div class="mapctl"><button data-act="zoom-in" aria-label="Zoom in">+</button><button data-act="zoom-out" aria-label="Zoom out">−</button>${inIsland ? '<button data-act="fit" aria-label="Fit island">⤢</button>' : ''}</div>
+    ${inIsland ? '' : '<div class="mapctl"><button data-act="zoom-in" aria-label="Zoom in">+</button><button data-act="zoom-out" aria-label="Zoom out">−</button></div>'}
     ${inIsland ? '<button class="backsea primary" data-act="back-sea">⟵ Back to sea</button>' : ''}
     <div id="overlay-root"></div>`;
   // After a successful action the forms start clean; otherwise restore what was typed.
@@ -730,23 +811,23 @@ function onAction(el: HTMLElement) {
       puzzle = { ...puzzle!, cells: decodeBoard(board), moves: [] };
     }).then(renderOverlay);
     case 'note': return void act('Building your note pole', async () => {
-      const text = val('note');
+      const text = (document.querySelector<HTMLTextAreaElement>('#bubble-text')?.value ?? noteDraft).trim();
       if (!text) throw new Error('Write a short note first.');
-      if (new TextEncoder().encode(text).length > 140) throw new Error('Notes are limited to 140 bytes.');
-      const tile = (island?.notes.length ?? 0) === 0 ? CENTER_TILE : pickTile;
-      if (tile === null) throw new Error('Choose a spot on the island first.');
-      await tx(g, config.sea, seaAbi, 'leaveNote', [selected, text, tile], 'Build note pole');
-      placing = false; pickTile = null;
+      if (byteLen(text) > 140) throw new Error('Notes are limited to 140 bytes.');
+      if (bubble?.kind !== 'write') throw new Error('Tap the sign or a glowing spot first.');
+      await tx(g, config.sea, seaAbi, 'leaveNote', [selected, text, bubble.tile], 'Build note pole');
+      noteDraft = ''; bubble = null;
     });
-    case 'place':
-      if (inside !== selected && selected !== null) enterIsland(selected);
-      placing = !placing; pickTile = null; render(); updateMap(); return;
-    case 'pick-note': selectedNote = Number(el.dataset.i); render(); updateMap(); return;
+    case 'close-bubble': closeBubble(); return;
+    case 'pick-note':
+      selectedNote = Number(el.dataset.i);
+      if (inside !== null && inside === selected) openBubble({ kind: 'read', index: selectedNote });
+      else { render(); updateMap(); }
+      return;
     case 'enter': if (selected !== null) enterIsland(selected); return;
-    case 'back-sea': inside = null; placing = false; pickTile = null; selectedNote = null; map?.leaveIsland(); render(); return;
+    case 'back-sea': inside = null; placing = false; pickTile = null; selectedNote = null; bubble = null; map?.leaveIsland(); render(); return;
     case 'zoom-in': map?.zoomBy(1.25); return;
     case 'zoom-out': map?.zoomBy(0.8); return;
-    case 'fit': map?.fitIsland(); return;
     case 'jump': return void act('Jumping', async () => {
       const to = selected!;
       const from = visited[visited.length - 1] ?? me!.home;
@@ -873,12 +954,22 @@ async function boot() {
     read<bigint>(config.game, config.coop, coopAbi, 'window').then(Number)]);
   const view = new URLSearchParams(location.search).get('captain');
   if (view && isAddress(view)) { viewAs = view; tab = 'cabinet'; }
-  app.innerHTML = '<div id="sea" class="sea" aria-label="Sea map"></div><div id="ui" class="ui"></div>';
+  app.innerHTML = '<div id="sea" class="sea" aria-label="Sea map"></div><div id="ui" class="ui"></div><div id="bubble" class="bubble" role="dialog" hidden></div>';
+  // A tap or click anywhere outside the bubble closes it (the draft is kept); Escape too.
+  document.addEventListener('pointerdown', e => {
+    if (bubble && !document.querySelector('#bubble')?.contains(e.target as Node)) closeBubble();
+  }, true);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeBubble(); });
+  addEventListener('resize', () => renderBubble());
   map = new SeaMap(document.querySelector('#sea')!, n => enterIsland(n), {
-    onTile: t => { pickTile = t; placing = false; tab = 'island'; sheetMin = false; render(); updateMap(); },
+    onTile: t => {
+      if (inside === null || !canWriteHere(inside)) return;
+      openBubble({ kind: 'write', tile: t });
+    },
     onPole: i => {
-      selectedNote = i; tab = 'island'; sheetMin = false; render(); updateMap();
-      document.querySelector(`#note-${i}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      selectedNote = i;
+      openBubble({ kind: 'read', index: i });
+      render();
     },
     onDock: dir => {
       focusLane = dir; tab = 'island'; sheetMin = false; render();
