@@ -126,6 +126,27 @@ const FRIENDLY: [RegExp, string][] = [
   [/WindowClosed/, 'Too late: the 60-second window closed.'],
   [/HelpersFull/, 'This raid already has 20 helpers.'],
   [/FAUCET_COOLDOWN/, 'Test USDC faucet: once per hour.'],
+  [/NotVisited/, 'You need to have visited that island first.'],
+  [/NotRegistered/, 'Claim your home island first.'],
+  [/AlreadyRegistered/, 'You already have a home island.'],
+  [/NoActiveParley/, 'Your Parley has ended. Meet again to share maps.'],
+  [/NotEnoughGems/, 'You have no gem of that kind to sell.'],
+  [/BadNote/, 'Notes must be 1 to 140 bytes.'],
+  [/BadVoyage/, 'Pick a registered crewmate (not yourself) and an island you have visited.'],
+  [/BadCharges/, 'Split the charges so each of you pays 1 to 3.'],
+  [/NotCoopLane/, 'That lane does not need a crew. Sail it on your own.'],
+  [/AlreadySolved/, 'You already solved this puzzle. Waiting for your crewmate.'],
+  [/WindowOpen/, 'The puzzle window is still open.'],
+  [/RaidOver/, 'The boss has left. Settle the raid instead.'],
+  [/RaidRunning/, 'The raid is still running; settle it after the boss leaves.'],
+  [/NotThisEpoch/, 'That raid belongs to an earlier boss.'],
+  [/NotCrew/, 'Only the captains on this crew can do that.'],
+  [/NotLead/, 'Only the two lead captains can fund this raid.'],
+  [/TooLate/, 'Funding closed: the boss has left.'],
+  [/BadAmount/, 'Enter an amount within the raid cap.'],
+  [/AlreadyInstalled/, 'That part is already fitted.'],
+  [/MaxLevel/, 'That stat is at its maximum level.'],
+  [/WrongStatus/, 'That is no longer possible: the voyage or raid has moved on. The panel has refreshed.'],
   [/User (rejected|denied)/i, 'Cancelled in wallet.']
 ];
 
@@ -773,7 +794,10 @@ function bind(root: Element) {
     render();
   }));
   root.querySelectorAll<HTMLElement>('[data-copy]').forEach(el => el.addEventListener('click', () => {
-    void navigator.clipboard?.writeText(el.dataset.copy!).then(() => { notice = 'Copied.'; noticeError = false; render(); });
+    void copyText(el.dataset.copy!).then(ok => {
+      notice = ok ? 'Copied.' : 'Copy is blocked here: long-press the text to copy it.';
+      noticeError = !ok; render();
+    });
   }));
   root.querySelectorAll<HTMLButtonElement>('[data-cell]').forEach(el => el.addEventListener('click', () => tapTile(Number(el.dataset.cell))));
   const actionable = [...root.querySelectorAll<HTMLElement>('[data-act]')];
@@ -782,6 +806,18 @@ function bind(root: Element) {
 }
 
 const val = (id: string) => (document.querySelector<HTMLInputElement>(`#${id}`)?.value ?? '').trim();
+/** navigator.clipboard exists only on HTTPS/localhost; a phone on the LAN demo (plain HTTP) needs the old path. */
+async function copyText(text: string) {
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* insecure context or denied */ }
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.readOnly = true; ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+  document.body.append(ta); ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { /* unsupported */ }
+  ta.remove();
+  return ok;
+}
+
 function addressInput(id: string) {
   const v = val(id);
   if (!isAddress(v)) throw new Error('Enter your crewmate\'s 0x address (they can copy it from the Crew tab).');
@@ -799,7 +835,11 @@ function onAction(el: HTMLElement) {
       sheetMin = !sheetMin; render(); return;
     case 'guest': return void act('Preparing guest captain', () => connect('guest'));
     case 'injected': return void act('Connecting wallet', () => connect('injected'));
-    case 'disconnect': signer = null; me = null; visited = []; selected = null; render(); return;
+    case 'disconnect':
+      // Back to the connect box (it lives on the Sea tab); drop everything tied to the old captain.
+      signer = null; me = null; visited = []; selected = null; island = null; sharedWith = null; coopForm = null;
+      puzzle = null; inside = null; bubble = null; map?.leaveIsland(); tab = 'island'; sheetMin = false;
+      render(); return;
     case 'exit-view': viewAs = null; history.replaceState(null, '', location.pathname); me = null; render(); return;
     case 'register': return void act('Claiming your island', () => tx(g, config.sea, seaAbi, 'register', [], 'Claim home island'));
     case 'sail': return void act('Setting sail', async () => {
@@ -829,7 +869,7 @@ function onAction(el: HTMLElement) {
       if (!text) throw new Error('Write a short note first.');
       if (byteLen(text) > 140) throw new Error('Notes are limited to 140 bytes.');
       if (bubble?.kind !== 'write') throw new Error('Tap the sign or a glowing spot first.');
-      await tx(g, config.sea, seaAbi, 'leaveNote', [selected, text, bubble.tile], 'Build note pole');
+      await tx(g, config.sea, seaAbi, 'leaveNote', [inside ?? selected, text, bubble.tile], 'Build note pole');
       noteDraft = ''; bubble = null;
     });
     case 'close-bubble': closeBubble(); return;
