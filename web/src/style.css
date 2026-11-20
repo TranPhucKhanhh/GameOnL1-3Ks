@@ -93,6 +93,7 @@ svg { display: block; width: 100%; height: 100%; }
 .tabs .ico { width: 34px; height: 34px; filter: drop-shadow(0 2px 0 #0003); }
 
 @media (min-width: 900px) {
+  .sea { right: 440px; }
   .ui { display: grid; grid-template-columns: 1fr 440px; grid-template-rows: auto auto 1fr auto; }
   .hud { grid-column: 1 / -1; }
   .demo-flag { grid-column: 1; justify-self: start; margin-left: 12px; align-self: start; }
