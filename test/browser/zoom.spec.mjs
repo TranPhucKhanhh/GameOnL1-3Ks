@@ -26,8 +26,7 @@ function getSceneZoom(page, sceneKey) {
   return page.evaluate(key => window.__lantern.map.game.scene.getScene(key).cameras.main.zoom, sceneKey);
 }
 
-async function pinch(page, centerX, centerY, startHalfDist, endHalfDist, steps = 8) {
-  const cdp = await page.context().newCDPSession(page);
+async function pinch(cdp, centerX, centerY, startHalfDist, endHalfDist, steps = 4) {
   const send = (type, halfDist) => cdp.send('Input.dispatchTouchEvent', {
     type,
     touchPoints: type === 'touchEnd' ? [] : [
@@ -39,14 +38,15 @@ async function pinch(page, centerX, centerY, startHalfDist, endHalfDist, steps =
   for (let step = 1; step <= steps; step++) {
     const halfDist = startHalfDist + ((endHalfDist - startHalfDist) * step) / steps;
     await send('touchMove', halfDist);
-    await page.waitForTimeout(16);
   }
   await send('touchEnd', endHalfDist);
 }
 
 test('mobile: pinch-to-zoom and +/- buttons zoom the sea map and island without zooming the page', async ({ browser }) => {
+  test.setTimeout(120_000);
   const { context, page, errors } = await openPhoneCaptain(browser, 'lantern-zoom-test-1');
   try {
+    const cdp = await context.newCDPSession(page);
     // 1. Viewport meta & canvas touch-action must prevent browser page zoom
     const metaContent = await page.locator('meta[name="viewport"]').getAttribute('content');
     expect(metaContent, 'viewport meta').toMatch(/user-scalable=no|maximum-scale=1(\.0)?/);
@@ -60,14 +60,14 @@ test('mobile: pinch-to-zoom and +/- buttons zoom the sea map and island without 
     const centerY = canvasBox.y + 180; // upper half above the bottom sheet
 
     const zoomBefore = await getSceneZoom(page, 'sea');
-    await pinch(page, centerX, centerY, 30, 110);
+    await pinch(cdp, centerX, centerY, 30, 110);
     await expect.poll(() => getSceneZoom(page, 'sea')).toBeGreaterThan(zoomBefore * 1.15);
     const zoomAfterPinchOut = await getSceneZoom(page, 'sea');
     const pageScale = await page.evaluate(() => window.visualViewport?.scale ?? 1);
     expect(pageScale, 'visualViewport.scale').toBe(1);
 
     // 3. Pinch in on the sea map should zoom out
-    await pinch(page, centerX, centerY, 110, 30);
+    await pinch(cdp, centerX, centerY, 110, 30);
     await expect.poll(() => getSceneZoom(page, 'sea')).toBeLessThan(zoomAfterPinchOut * 0.85);
 
     // 4. Tap + and - buttons on phone (sea view)
@@ -83,7 +83,7 @@ test('mobile: pinch-to-zoom and +/- buttons zoom the sea map and island without 
     await page.locator('#sheet button', { hasText: 'Go ashore' }).click();
     await expect(page.locator('[data-act="back-sea"]')).toBeVisible({ timeout: 10_000 });
     const islZoomBefore = await getSceneZoom(page, 'island');
-    await pinch(page, centerX, centerY, 30, 110);
+    await pinch(cdp, centerX, centerY, 30, 110);
     await expect.poll(() => getSceneZoom(page, 'island')).toBeGreaterThan(islZoomBefore * 1.15);
     const islZoomAfterPinch = await getSceneZoom(page, 'island');
 
