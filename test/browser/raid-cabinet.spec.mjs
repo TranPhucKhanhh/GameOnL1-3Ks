@@ -72,11 +72,13 @@ test('three captains fund, attack and settle a raid and view the desktop cabinet
     await act(lead.page, 'Claim 10 USDC');
     await expect.poll(claimable).toBe(0n);
 
+    // Three live Phaser pages starve the CI runner's software WebGL; the desktop page took >20 s to boot.
+    await Promise.all([lead, partner, helper].map(c => c.page.close()));
     const desktop = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     try {
       const desktopPage = await desktop.newPage();
       await desktopPage.goto(`/?captain=${lead.address}`);
-      await expect(desktopPage.locator('#sheet')).toContainText('Treasure cabinet', { timeout: 20_000 });
+      await expect(desktopPage.locator('#sheet')).toContainText('Treasure cabinet', { timeout: 60_000 });
       await desktopPage.screenshot({ path: 'test-results/lantern-desktop-cabinet.png' });
       // Nothing may sit on top of the map on desktop (regression: an empty overlay box used to block drag and zoom).
       expect(await desktopPage.evaluate(() => document.elementFromPoint(400, 450)?.tagName)).toBe('CANVAS');
