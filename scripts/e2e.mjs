@@ -89,18 +89,30 @@ try {
   await write(c(leader), config.usdc, abi('MockUSDC'), 'faucet');
   await write(c(leader), config.usdc, abi('MockUSDC'), 'approve', [config.escrow, 10_000000n]);
   await write(c(leader), config.escrow, abi('RaidEscrow'), 'fund', [raidId, 10_000000n]);
+  await write(c(partner), config.usdc, abi('MockUSDC'), 'faucet');
+  await write(c(partner), config.usdc, abi('MockUSDC'), 'approve', [config.escrow, 90_000000n]);
+  await write(c(partner), config.escrow, abi('RaidEscrow'), 'fund', [raidId, 90_000000n]);
   await local.relay();
-  assert.equal((await readG(config.raid, 'BossRaid', 'raidView', [raidId])).bounty, 10_000000n, 'bounty must reach L1');
+  assert.equal((await readG(config.raid, 'BossRaid', 'raidView', [raidId])).bounty, 100_000000n, 'combined bounty must reach L1');
+  await assert.rejects(write(c(leader), config.escrow, abi('RaidEscrow'), 'fund', [raidId, 1_000000n]), /BadAmount/);
+  const [chargesBefore] = await readG(config.sea, 'LanternSea', 'chargesOf', [helper]);
   await write(g(helper), config.raid, abi('BossRaid'), 'attack', [raidId]);
   assert.equal(await readG(config.raid, 'BossRaid', 'damageOf', [raidId, helper]), 10n);
+  const [chargesAfter] = await readG(config.sea, 'LanternSea', 'chargesOf', [helper]);
+  assert.equal(chargesAfter, chargesBefore - 1, 'helper attack must spend one charge');
   // Local-only JSON-RPC time travel to the end of the boss window; never a contract backdoor.
   await g().public.request({ method: 'evm_increaseTime', params: [601] });
   await g().public.request({ method: 'evm_mine', params: [] });
+  assert.ok(await readG(config.raid, 'BossRaid', 'currentRaidId') > raidId, 'settling a previous epoch');
   await write(g(helper), config.raid, abi('BossRaid'), 'settle', [raidId]);
   await local.relay();
   assert.equal(await readC(config.escrow, 'RaidEscrow', 'claimable', [leader]), 10_000000n, 'failed raid refunds the funder');
+  assert.equal(await readC(config.escrow, 'RaidEscrow', 'claimable', [partner]), 90_000000n, 'failed raid refunds the partner');
   assert.equal(await readC(config.escrow, 'RaidEscrow', 'claimable', [helper]), 0n);
   await write(c(leader), config.escrow, abi('RaidEscrow'), 'claim');
+  await write(c(partner), config.escrow, abi('RaidEscrow'), 'claim');
+  assert.equal(await readC(config.usdc, 'MockUSDC', 'balanceOf', [leader]), 100_000000n);
+  assert.equal(await readC(config.usdc, 'MockUSDC', 'balanceOf', [partner]), 100_000000n);
   const [bal, escrowed, claimable] = await Promise.all([
     readC(config.usdc, 'MockUSDC', 'balanceOf', [config.escrow]),
     readC(config.escrow, 'RaidEscrow', 'totalEscrowed'), readC(config.escrow, 'RaidEscrow', 'totalClaimable')]);

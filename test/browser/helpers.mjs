@@ -20,6 +20,7 @@ export function loadAbi(name) {
   return JSON.parse(readFileSync(`web/src/generated/${name}.json`, 'utf8'));
 }
 
+/** Anvil test client; untyped so tests can send anvil_/evm_ methods. @returns {any} */
 export function gameClient(cfg) {
   return createPublicClient({ transport: http(cfg.game.rpcUrl) });
 }

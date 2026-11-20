@@ -1,10 +1,18 @@
 name: lantern-sea-checks
-on: [push, pull_request]
+# Pushes to PR branches are covered by the pull_request run; only main runs on push (no duplicate runs).
+on:
+  push:
+    branches: [main]
+  pull_request:
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -15,9 +23,18 @@ jobs:
       - run: npm run foundry:install
       - run: npm run check
       - run: npm run test:e2e
+        timeout-minutes: 5
       - run: npm run test:deploy
-      - run: npx playwright install --with-deps chromium
+        timeout-minutes: 5
+      # ubuntu-latest already ships Chrome's system libraries, so skip --with-deps (its apt step took ~7 min).
+      # The Playwright container was tried instead and rendered the Phaser map ~3x slower.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npx playwright install chromium
       - run: npm run test:ui
+        timeout-minutes: 20
       - uses: actions/upload-artifact@v7
         if: always()
         with:

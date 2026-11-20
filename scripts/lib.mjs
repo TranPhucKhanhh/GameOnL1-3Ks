@@ -12,7 +12,8 @@ export function tool(name) {
   return existsSync(homeBin) ? homeBin : name;
 }
 export function run(name, args, options = {}) {
-  const result = spawnSync(tool(name), args, { stdio: 'inherit', ...options });
+  // A hung tool (e.g. forge waiting on a dead RPC) must fail the run, not stall CI for hours.
+  const result = spawnSync(tool(name), args, { stdio: 'inherit', timeout: 600_000, ...options });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`${name} failed (${result.status})`);
 }

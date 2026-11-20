@@ -126,6 +126,27 @@ const FRIENDLY: [RegExp, string][] = [
   [/WindowClosed/, 'Too late: the 60-second window closed.'],
   [/HelpersFull/, 'This raid already has 20 helpers.'],
   [/FAUCET_COOLDOWN/, 'Test USDC faucet: once per hour.'],
+  [/NotVisited/, 'You need to have visited that island first.'],
+  [/NotRegistered/, 'Claim your home island first.'],
+  [/AlreadyRegistered/, 'You already have a home island.'],
+  [/NoActiveParley/, 'Your Parley has ended. Meet again to share maps.'],
+  [/NotEnoughGems/, 'You have no gem of that kind to sell.'],
+  [/BadNote/, 'Notes must be 1 to 140 bytes.'],
+  [/BadVoyage/, 'Pick a registered crewmate (not yourself) and an island you have visited.'],
+  [/BadCharges/, 'Split the charges so each of you pays 1 to 3.'],
+  [/NotCoopLane/, 'That lane does not need a crew. Sail it on your own.'],
+  [/AlreadySolved/, 'You already solved this puzzle. Waiting for your crewmate.'],
+  [/WindowOpen/, 'The puzzle window is still open.'],
+  [/RaidOver/, 'The boss has left. Settle the raid instead.'],
+  [/RaidRunning/, 'The raid is still running; settle it after the boss leaves.'],
+  [/NotThisEpoch/, 'That raid belongs to an earlier boss.'],
+  [/NotCrew/, 'Only the captains on this crew can do that.'],
+  [/NotLead/, 'Only the two lead captains can fund this raid.'],
+  [/TooLate/, 'Funding closed: the boss has left.'],
+  [/BadAmount/, 'Enter an amount within the raid cap.'],
+  [/AlreadyInstalled/, 'That part is already fitted.'],
+  [/MaxLevel/, 'That stat is at its maximum level.'],
+  [/WrongStatus/, 'That is no longer possible: the voyage or raid has moved on. The panel has refreshed.'],
   [/User (rejected|denied)/i, 'Cancelled in wallet.']
 ];
 
@@ -212,7 +233,7 @@ async function loadVoyages(addr: Address) {
     aSolvedAt: r[9] as bigint, bSolvedAt: r[10] as bigint, fresh: r[11] as boolean }))
     .filter(v => same(v.a, addr) || same(v.b, addr));
   // Auto-open the puzzle for both crewmates as soon as the voyage starts.
-  const live = voyages.find(v => v.status === 2 && Number(v.startedAt) + coopWindow > now()
+  const live = voyages.find(v => v.status === 2 && Number(v.startedAt) + coopWindow >= now()
     && (same(v.a, addr) ? v.aSolvedAt === 0n : v.bSolvedAt === 0n));
   if (live && !puzzle && !dismissedPuzzles.has(String(live.id)) && signer) {
     const board = await read<bigint>(config.game, config.coop, coopAbi, 'puzzleOf', [live.id, addr]);
@@ -221,11 +242,12 @@ async function loadVoyages(addr: Address) {
 }
 
 async function loadRaid(addr: Address | null) {
-  raidId = await read<bigint>(config.game, config.raid, raidAbi, 'currentRaidId');
+  const id = await read<bigint>(config.game, config.raid, raidAbi, 'currentRaidId');
   const [b, view, prev] = await Promise.all([
-    read<readonly [number, bigint, bigint, bigint]>(config.game, config.raid, raidAbi, 'bossOf', [raidId]),
-    read<RaidView>(config.game, config.raid, raidAbi, 'raidView', [raidId]),
-    read<RaidView>(config.game, config.raid, raidAbi, 'raidView', [raidId - 1n])]);
+    read<readonly [number, bigint, bigint, bigint]>(config.game, config.raid, raidAbi, 'bossOf', [id]),
+    read<RaidView>(config.game, config.raid, raidAbi, 'raidView', [id]),
+    read<RaidView>(config.game, config.raid, raidAbi, 'raidView', [id - 1n])]);
+  raidId = id;
   boss = { island: Number(b[0]), maxHp: b[1], coins: b[2], endsAt: b[3] };
   raidView = view;
   lastRaid = prev.status >= 2 && !prev.settled ? { id: raidId - 1n, view: prev } : null;
@@ -303,7 +325,7 @@ function islandData(n: number): IslandData {
       return { dir: l.dir, cost: l.cost, coop: l.coop, angle: Math.atan2(to.y - from.y, to.x - from.x),
         label: visited.includes(l.to) ? islandName(l.to) : '?' };
     }) : [],
-    placing: inside === n && canWriteHere(n) && (island?.notes.length ?? 0) > 0,
+    placing: inside === n && canWriteHere(n),
     pick: bubble?.kind === 'write' && bubble.tile !== CENTER_TILE ? bubble.tile : null,
     selectedPole: bubble?.kind === 'read' ? bubble.index : selectedNote
   };
@@ -542,8 +564,8 @@ function crewPanel() {
     let actions = '';
     if (v.status === 1 && !amA) actions = `<button class="go" data-act="join" data-id="${v.id}" ${!busy ? '' : 'disabled'}>Join (⚓${v.cost - v.aCharges})</button>`;
     if (v.status === 1) actions += `<button data-act="cancel" data-id="${v.id}">Cancel</button>`;
-    if (v.status === 2 && deadline > now() && solvedMe === 0n) actions = `<button class="primary" data-act="open-puzzle" data-id="${v.id}">Open puzzle</button>`;
-    if (v.status === 2 && deadline <= now()) actions = `<button data-act="expire" data-id="${v.id}">Mark lost</button>`;
+    if (v.status === 2 && deadline >= now() && solvedMe === 0n) actions = `<button class="primary" data-act="open-puzzle" data-id="${v.id}">Open puzzle</button>`;
+    if (v.status === 2 && deadline < now()) actions = `<button data-act="expire" data-id="${v.id}">Mark lost</button>`;
     return `<li><span><b>${esc(islandName(v.from))} → ${v.status === 3 ? esc(islandName(v.to)) : 'unknown waters'}</b>
       <small>with ${short(other)} · ⚓${v.cost} · ${VOYAGE_STATUS[v.status]}${v.status === 2 ? ` · you ${solvedMe ? '✓' : '…'} / them ${solvedThem ? '✓' : '…'} · ${tick(deadline)}` : ''}${v.status === 3 ? (v.fresh ? ' · claimed!' : ' · already claimed') : ''}</small></span>${actions}</li>`;
   }).join('');
@@ -756,12 +778,13 @@ function render() {
 function renderOverlay() {
   const root = document.querySelector<HTMLElement>('#overlay-root');
   if (!root) return;
+  if (puzzle || overlay !== 'scan') stopScan();
   const key = overlayStateKey();
   renderedOverlayKey = key;
   root.innerHTML = overlayMarkup();
   root.dataset.key = key;
   bind(root);
-  if (overlay === 'scan' && !scanStop) void startScan();
+  if (!puzzle && overlay === 'scan' && !scanStop) void startScan();
 }
 
 function bind(root: Element) {
@@ -771,7 +794,10 @@ function bind(root: Element) {
     render();
   }));
   root.querySelectorAll<HTMLElement>('[data-copy]').forEach(el => el.addEventListener('click', () => {
-    void navigator.clipboard?.writeText(el.dataset.copy!).then(() => { notice = 'Copied.'; noticeError = false; render(); });
+    void copyText(el.dataset.copy!).then(ok => {
+      notice = ok ? 'Copied.' : 'Copy is blocked here: long-press the text to copy it.';
+      noticeError = !ok; render();
+    });
   }));
   root.querySelectorAll<HTMLButtonElement>('[data-cell]').forEach(el => el.addEventListener('click', () => tapTile(Number(el.dataset.cell))));
   const actionable = [...root.querySelectorAll<HTMLElement>('[data-act]')];
@@ -780,6 +806,18 @@ function bind(root: Element) {
 }
 
 const val = (id: string) => (document.querySelector<HTMLInputElement>(`#${id}`)?.value ?? '').trim();
+/** navigator.clipboard exists only on HTTPS/localhost; a phone on the LAN demo (plain HTTP) needs the old path. */
+async function copyText(text: string) {
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* insecure context or denied */ }
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.readOnly = true; ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+  document.body.append(ta); ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { /* unsupported */ }
+  ta.remove();
+  return ok;
+}
+
 function addressInput(id: string) {
   const v = val(id);
   if (!isAddress(v)) throw new Error('Enter your crewmate\'s 0x address (they can copy it from the Crew tab).');
@@ -797,7 +835,11 @@ function onAction(el: HTMLElement) {
       sheetMin = !sheetMin; render(); return;
     case 'guest': return void act('Preparing guest captain', () => connect('guest'));
     case 'injected': return void act('Connecting wallet', () => connect('injected'));
-    case 'disconnect': signer = null; me = null; visited = []; selected = null; render(); return;
+    case 'disconnect':
+      // Back to the connect box (it lives on the Sea tab); drop everything tied to the old captain.
+      signer = null; me = null; visited = []; selected = null; island = null; sharedWith = null; coopForm = null;
+      puzzle = null; inside = null; bubble = null; map?.leaveIsland(); tab = 'island'; sheetMin = false;
+      render(); return;
     case 'exit-view': viewAs = null; history.replaceState(null, '', location.pathname); me = null; render(); return;
     case 'register': return void act('Claiming your island', () => tx(g, config.sea, seaAbi, 'register', [], 'Claim home island'));
     case 'sail': return void act('Setting sail', async () => {
@@ -827,7 +869,7 @@ function onAction(el: HTMLElement) {
       if (!text) throw new Error('Write a short note first.');
       if (byteLen(text) > 140) throw new Error('Notes are limited to 140 bytes.');
       if (bubble?.kind !== 'write') throw new Error('Tap the sign or a glowing spot first.');
-      await tx(g, config.sea, seaAbi, 'leaveNote', [selected, text, bubble.tile], 'Build note pole');
+      await tx(g, config.sea, seaAbi, 'leaveNote', [inside ?? selected, text, bubble.tile], 'Build note pole');
       noteDraft = ''; bubble = null;
     });
     case 'close-bubble': closeBubble(); return;
@@ -862,10 +904,14 @@ function onAction(el: HTMLElement) {
     case 'settle-last': return void act('Settling', () => tx(g, config.raid, raidAbi, 'settle', [lastRaid!.id], 'Settle last raid'));
     case 'faucet': return void act('Getting test USDC', () => tx(c, config.usdc, usdcAbi, 'faucet', [], 'Test USDC faucet'));
     case 'fund': return void act('Escrowing bounty', async () => {
+      const id = raidId;
       const amount = parseUnits(val('bounty') || '0', 6);
-      if (amount <= 0n || amount > 100_000000n) throw new Error('Bounty must be between 1 and 100 test USDC.');
+      const [funded, cap] = await Promise.all([
+        read<bigint>(c, config.escrow, escrowAbi, 'bountyOf', [id]),
+        read<bigint>(c, config.escrow, escrowAbi, 'maxBounty')]);
+      if (amount <= 0n || funded + amount > cap) throw new Error(`Enter a positive amount up to ${formatUnits(cap - funded, 6)} test USDC remaining for this raid.`);
       await tx(c, config.usdc, usdcAbi, 'approve', [config.escrow, amount], 'Approve exact bounty');
-      await tx(c, config.escrow, escrowAbi, 'fund', [raidId, amount], 'Escrow bounty (ICM → L1)');
+      await tx(c, config.escrow, escrowAbi, 'fund', [id, amount], 'Escrow bounty (ICM → L1)');
     });
     case 'claim': return void act('Claiming', () => tx(c, config.escrow, escrowAbi, 'claim', [], 'Claim USDC'));
     case 'copy-link': return;
@@ -875,7 +921,7 @@ function onAction(el: HTMLElement) {
 // ------------------------------------------------------------------ puzzle
 
 function tapTile(cell: number) {
-  if (!puzzle || puzzle.submitting) return;
+  if (!puzzle || puzzle.submitting || busy || now() > puzzle.deadline) return;
   const move = moveForTap(puzzle.cells, cell);
   if (move < 0) return;
   puzzle.cells = moveBlank(puzzle.cells, move)!;
@@ -929,6 +975,10 @@ async function startScan() {
   let stream: MediaStream;
   try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); }
   catch { if (msg) msg.textContent = 'Camera blocked. Allow it, or paste the code instead.'; return; }
+  if (!video.isConnected || overlay !== 'scan' || puzzle) {
+    stream.getTracks().forEach(t => t.stop());
+    return;
+  }
   let running = true;
   scanStop = () => { running = false; stream.getTracks().forEach(t => t.stop()); };
   video.srcObject = stream;
@@ -1038,6 +1088,7 @@ async function boot() {
     document.querySelectorAll<HTMLElement>('#sheet [data-until]').forEach(el => { el.textContent = left(Number(el.dataset.until) - now()); });
     if (puzzle) {
       const t = puzzle.deadline - now();
+      if (t < 0 && !puzzle.submitting) { puzzle = null; render(); return; }
       const el = document.querySelector('.timer');
       if (el) { el.textContent = left(Math.max(0, t)); el.classList.toggle('urgent', t < 15); }
     } else if (overlay === 'qr' && qr) {

@@ -5,7 +5,7 @@ A co-op pirate exploration game on **your own Avalanche L1**, with raid bounties
 Every captain gets a home island, three sailing charges and a sea that nobody has mapped yet.
 
 - **Explore:** each island shows 1–4 sea lanes. You see each lane's direction and cost (⚓1 or ⚓2), but not where it leads. Every island you reach opens new lanes.
-- **Crew lanes:** these cost ⚓4–5, more than one captain can hold, so two captains must pool charges. Then both must solve a 4×4 sliding puzzle within 60 seconds of each other. The first crew to land on a crew island is guaranteed a gem.
+- **Crew lanes:** these cost ⚓4–5, more than one captain can hold, so two captains must pool charges. Then both must solve a 4×4 sliding puzzle within 60 seconds of joining. When a crew lands on an unclaimed island, each captain earns a gem.
 - **Collisions:** the sea is a small hash space on purpose. You will stumble onto other captains' islands and bases.
 - **Go ashore:** tap any island to walk its hash-generated land. Build a note pole for 25 coins: the first pole stands in the centre, and later ones go on any free spot you pick. Tap a pole to read it.
 - **Parley:** meet in person and scan each other's QR code. For a while your maps are shared, and you can jump to any of your crewmate's islands for ⚓1.
@@ -48,7 +48,7 @@ npm run test:e2e
 npm run test:ui
 ```
 
-These run the 24 Foundry contract tests, the frontend build, an end-to-end test on two local chains with a simulated ICM relay, and a two-captain browser test at phone size. See [testing](docs/testing.md).
+These run the Foundry contract suite, the frontend build, an end-to-end test on two local chains with a simulated ICM relay, and browser tests for co-op, raids and map interaction. See [testing](docs/testing.md).
 
 ## Docs
 
