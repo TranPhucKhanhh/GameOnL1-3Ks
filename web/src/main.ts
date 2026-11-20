@@ -211,7 +211,7 @@ async function loadVoyages(addr: Address) {
     aSolvedAt: r[9] as bigint, bSolvedAt: r[10] as bigint, fresh: r[11] as boolean }))
     .filter(v => same(v.a, addr) || same(v.b, addr));
   // Auto-open the puzzle for both crewmates as soon as the voyage starts.
-  const live = voyages.find(v => v.status === 2 && Number(v.startedAt) + coopWindow > now()
+  const live = voyages.find(v => v.status === 2 && Number(v.startedAt) + coopWindow >= now()
     && (same(v.a, addr) ? v.aSolvedAt === 0n : v.bSolvedAt === 0n));
   if (live && !puzzle && !dismissedPuzzles.has(String(live.id)) && signer) {
     const board = await read<bigint>(config.game, config.coop, coopAbi, 'puzzleOf', [live.id, addr]);
@@ -220,11 +220,12 @@ async function loadVoyages(addr: Address) {
 }
 
 async function loadRaid(addr: Address | null) {
-  raidId = await read<bigint>(config.game, config.raid, raidAbi, 'currentRaidId');
+  const id = await read<bigint>(config.game, config.raid, raidAbi, 'currentRaidId');
   const [b, view, prev] = await Promise.all([
-    read<readonly [number, bigint, bigint, bigint]>(config.game, config.raid, raidAbi, 'bossOf', [raidId]),
-    read<RaidView>(config.game, config.raid, raidAbi, 'raidView', [raidId]),
-    read<RaidView>(config.game, config.raid, raidAbi, 'raidView', [raidId - 1n])]);
+    read<readonly [number, bigint, bigint, bigint]>(config.game, config.raid, raidAbi, 'bossOf', [id]),
+    read<RaidView>(config.game, config.raid, raidAbi, 'raidView', [id]),
+    read<RaidView>(config.game, config.raid, raidAbi, 'raidView', [id - 1n])]);
+  raidId = id;
   boss = { island: Number(b[0]), maxHp: b[1], coins: b[2], endsAt: b[3] };
   raidView = view;
   lastRaid = prev.status >= 2 && !prev.settled ? { id: raidId - 1n, view: prev } : null;
@@ -301,7 +302,7 @@ function islandData(n: number): IslandData {
       return { dir: l.dir, cost: l.cost, coop: l.coop, angle: Math.atan2(to.y - from.y, to.x - from.x),
         label: visited.includes(l.to) ? islandName(l.to) : '?' };
     }) : [],
-    placing: inside === n && canWriteHere(n) && (island?.notes.length ?? 0) > 0,
+    placing: inside === n && canWriteHere(n),
     pick: bubble?.kind === 'write' && bubble.tile !== CENTER_TILE ? bubble.tile : null,
     selectedPole: bubble?.kind === 'read' ? bubble.index : selectedNote
   };
@@ -540,8 +541,8 @@ function crewPanel() {
     let actions = '';
     if (v.status === 1 && !amA) actions = `<button class="go" data-act="join" data-id="${v.id}" ${!busy ? '' : 'disabled'}>Join (⚓${v.cost - v.aCharges})</button>`;
     if (v.status === 1) actions += `<button data-act="cancel" data-id="${v.id}">Cancel</button>`;
-    if (v.status === 2 && deadline > now() && solvedMe === 0n) actions = `<button class="primary" data-act="open-puzzle" data-id="${v.id}">Open puzzle</button>`;
-    if (v.status === 2 && deadline <= now()) actions = `<button data-act="expire" data-id="${v.id}">Mark lost</button>`;
+    if (v.status === 2 && deadline >= now() && solvedMe === 0n) actions = `<button class="primary" data-act="open-puzzle" data-id="${v.id}">Open puzzle</button>`;
+    if (v.status === 2 && deadline < now()) actions = `<button data-act="expire" data-id="${v.id}">Mark lost</button>`;
     return `<li><span><b>${esc(islandName(v.from))} → ${v.status === 3 ? esc(islandName(v.to)) : 'unknown waters'}</b>
       <small>with ${short(other)} · ⚓${v.cost} · ${VOYAGE_STATUS[v.status]}${v.status === 2 ? ` · you ${solvedMe ? '✓' : '…'} / them ${solvedThem ? '✓' : '…'} · ${tick(deadline)}` : ''}${v.status === 3 ? (v.fresh ? ' · claimed!' : ' · already claimed') : ''}</small></span>${actions}</li>`;
   }).join('');
@@ -754,12 +755,13 @@ function render() {
 function renderOverlay() {
   const root = document.querySelector<HTMLElement>('#overlay-root');
   if (!root) return;
+  if (puzzle || overlay !== 'scan') stopScan();
   const key = overlayStateKey();
   renderedOverlayKey = key;
   root.innerHTML = overlayMarkup();
   root.dataset.key = key;
   bind(root);
-  if (overlay === 'scan' && !scanStop) void startScan();
+  if (!puzzle && overlay === 'scan' && !scanStop) void startScan();
 }
 
 function bind(root: Element) {
@@ -854,10 +856,14 @@ function onAction(el: HTMLElement) {
     case 'settle-last': return void act('Settling', () => tx(g, config.raid, raidAbi, 'settle', [lastRaid!.id], 'Settle last raid'));
     case 'faucet': return void act('Getting test USDC', () => tx(c, config.usdc, usdcAbi, 'faucet', [], 'Test USDC faucet'));
     case 'fund': return void act('Escrowing bounty', async () => {
+      const id = raidId;
       const amount = parseUnits(val('bounty') || '0', 6);
-      if (amount <= 0n || amount > 100_000000n) throw new Error('Bounty must be between 1 and 100 test USDC.');
+      const [funded, cap] = await Promise.all([
+        read<bigint>(c, config.escrow, escrowAbi, 'bountyOf', [id]),
+        read<bigint>(c, config.escrow, escrowAbi, 'maxBounty')]);
+      if (amount <= 0n || funded + amount > cap) throw new Error(`Enter a positive amount up to ${formatUnits(cap - funded, 6)} test USDC remaining for this raid.`);
       await tx(c, config.usdc, usdcAbi, 'approve', [config.escrow, amount], 'Approve exact bounty');
-      await tx(c, config.escrow, escrowAbi, 'fund', [raidId, amount], 'Escrow bounty (ICM → L1)');
+      await tx(c, config.escrow, escrowAbi, 'fund', [id, amount], 'Escrow bounty (ICM → L1)');
     });
     case 'claim': return void act('Claiming', () => tx(c, config.escrow, escrowAbi, 'claim', [], 'Claim USDC'));
     case 'copy-link': return;
@@ -867,7 +873,7 @@ function onAction(el: HTMLElement) {
 // ------------------------------------------------------------------ puzzle
 
 function tapTile(cell: number) {
-  if (!puzzle || puzzle.submitting) return;
+  if (!puzzle || puzzle.submitting || busy || now() > puzzle.deadline) return;
   const move = moveForTap(puzzle.cells, cell);
   if (move < 0) return;
   puzzle.cells = moveBlank(puzzle.cells, move)!;
@@ -921,6 +927,10 @@ async function startScan() {
   let stream: MediaStream;
   try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); }
   catch { if (msg) msg.textContent = 'Camera blocked. Allow it, or paste the code instead.'; return; }
+  if (!video.isConnected || overlay !== 'scan' || puzzle) {
+    stream.getTracks().forEach(t => t.stop());
+    return;
+  }
   let running = true;
   scanStop = () => { running = false; stream.getTracks().forEach(t => t.stop()); };
   video.srcObject = stream;
@@ -997,6 +1007,7 @@ async function boot() {
     document.querySelectorAll<HTMLElement>('#sheet [data-until]').forEach(el => { el.textContent = left(Number(el.dataset.until) - now()); });
     if (puzzle) {
       const t = puzzle.deadline - now();
+      if (t < 0 && !puzzle.submitting) { puzzle = null; render(); return; }
       const el = document.querySelector('.timer');
       if (el) { el.textContent = left(Math.max(0, t)); el.classList.toggle('urgent', t < 15); }
     } else if (overlay === 'qr' && qr) {

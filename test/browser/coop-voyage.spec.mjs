@@ -2,6 +2,18 @@ import { test, expect } from '@playwright/test';
 import { walk, voyageSeed, solution } from '../../scripts/puzzle-walk.mjs';
 import { act, findCaptainKey, gameClient, guestKey, loadAbi, loadConfig, tab, withCaptains } from './helpers.mjs';
 
+async function startVoyage(proposer, partner) {
+  await tab(proposer.page, 'Sea');
+  await act(proposer.page, 'Plan crew voyage');
+  await proposer.page.fill('#partner', partner.address);
+  await act(proposer.page, 'Send invitation');
+  await expect(proposer.page.locator('#sheet')).toContainText('Waiting for crewmate');
+
+  await tab(partner.page, 'Crew');
+  await partner.page.locator('#sheet button[data-act="join"]').click();
+  await expect(partner.page.locator('.board')).toBeVisible();
+}
+
 test('co-op voyage: two captains pool charges, solve sliding puzzles and land together', async ({ browser }) => {
   const cfg = loadConfig();
   const game = gameClient(cfg);
@@ -9,16 +21,7 @@ test('co-op voyage: two captains pool charges, solve sliding puzzles and land to
   const keyA = await findCaptainKey(cfg, 'lantern-ui-coop-a', ls => ls.some(l => l.coop));
 
   await withCaptains(browser, [keyA, guestKey('lantern-ui-coop-b')], async ([A, B]) => {
-    await tab(A.page, 'Sea');
-    await act(A.page, 'Plan crew voyage');
-    await A.page.fill('#partner', B.address);
-    await act(A.page, 'Send invitation');
-    await expect(A.page.locator('#sheet')).toContainText('Waiting for crewmate', { timeout: 20_000 });
-
-    await tab(B.page, 'Crew');
-    await expect(B.page.locator('#sheet button', { hasText: /^Join/ })).toBeVisible({ timeout: 20_000 });
-    await B.page.locator('#sheet button', { hasText: /^Join/ }).click();
-    await expect(B.page.locator('.board')).toBeVisible({ timeout: 20_000 });
+    await startVoyage(A, B);
 
     const id = await game.readContract({ address: cfg.coop, abi: coopAbi, functionName: 'voyageCount' });
     const startedAt = (await game.readContract({ address: cfg.coop, abi: coopAbi, functionName: 'voyages', args: [id] }))[8];
@@ -43,5 +46,24 @@ test('co-op voyage: two captains pool charges, solve sliding puzzles and land to
 
     await tab(A.page, 'Crew');
     await expect(A.page.locator('#sheet')).toContainText('Landed', { timeout: 20_000 });
+  });
+});
+
+test('co-op timeout closes the open puzzle and lets the captain mark the voyage lost', async ({ browser }) => {
+  const cfg = loadConfig();
+  const game = gameClient(cfg);
+  const coopAbi = loadAbi('CoopSail');
+  const key = await findCaptainKey(cfg, 'lantern-ui-timeout-proposer', routes => routes.some(lane => lane.coop));
+  await withCaptains(browser, [key, guestKey('lantern-ui-timeout-partner')], async ([proposer, partner]) => {
+    await startVoyage(proposer, partner);
+    const id = await game.readContract({ address: cfg.coop, abi: coopAbi, functionName: 'voyageCount' });
+    const deadline = await game.readContract({ address: cfg.coop, abi: coopAbi, functionName: 'deadlineOf', args: [id] });
+    const expiredAt = Number(deadline) + 1;
+    await game.request({ method: 'evm_setNextBlockTimestamp', params: [expiredAt] });
+    await game.request({ method: 'evm_mine', params: [] });
+    await partner.page.clock.setFixedTime(new Date(expiredAt * 1000));
+    await expect(partner.page.locator('.board')).toBeHidden();
+    await act(partner.page, 'Mark lost');
+    await expect(partner.page.locator('#sheet')).toContainText('Lost at sea');
   });
 });

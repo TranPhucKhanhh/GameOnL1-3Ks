@@ -183,6 +183,8 @@ contract BossRaid is CrossChainEndpoint {
         (uint8 kind, bytes memory body) = abi.decode(message, (uint8, bytes));
         if (kind != SeaMessages.BOUNTY_FUNDED) revert BadMessage();
         (uint256 raidId, uint256 total) = abi.decode(body, (uint256, uint256));
+        // Funding messages carry cumulative totals and may arrive out of order.
+        if (total <= raids[raidId].bounty) return;
         raids[raidId].bounty = total;
         emit BountyUpdated(raidId, total);
     }

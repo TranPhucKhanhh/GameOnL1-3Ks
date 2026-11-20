@@ -153,7 +153,13 @@ contract RaidEscrow is CrossChainEndpoint {
         uint256 totalDamage
     ) internal {
         Raid storage r = raids[raidId];
-        // Expired (already refunded) or never-registered raids: nothing left to move.
+        // Settlement can arrive before registration. Record it so a late opening cannot accept deposits.
+        if (r.status == Status.None) {
+            r.status = Status.Settled;
+            emit RaidClosed(raidId, Status.Settled);
+            return;
+        }
+        // Settled or expired raids have no funds left to move.
         if (r.status != Status.Open) return;
         if (helpers.length != dmg.length) revert BadMessage();
         r.status = Status.Settled;

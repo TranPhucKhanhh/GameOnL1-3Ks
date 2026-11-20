@@ -14,10 +14,17 @@ test('note pole: write the first note in the centre sign bubble, read it back, c
     await expect(A.page.locator('#sheet')).toContainText('Tap the "?" sign', { timeout: 20_000 });
 
     // Write the first note in the speech bubble on the centre sign (tile 40), not in the panel (#9).
-    const centre = () => A.page.evaluate(() => window.__lantern.map.tileScreen(40, true));
+    const centre = () => A.page.evaluate(() => {
+      const { map } = window.__lantern;
+      const position = map.tileScreen(40, true);
+      if (!position) return null;
+      return { ...position, zoom: map.game.scene.getScene('island').cameras.main.zoom };
+    });
     await expect.poll(centre).not.toBeNull();
     const c = await centre();
-    await A.page.touchscreen.tap(c.x, c.y);
+    await A.page.touchscreen.tap(c.x + 17 * c.zoom, c.y + 12 * c.zoom);
+    await expect(A.page.locator('#bubble')).toBeHidden();
+    await A.page.touchscreen.tap(c.x + 16 * c.zoom, c.y - 46 * c.zoom);
     await expect(A.page.locator('#bubble-text')).toBeVisible();
     await A.page.fill('#bubble-text', 'First lantern lit on this island!');
     const build = A.page.locator('#bubble button[data-act="note"]');

@@ -18,6 +18,7 @@ export type MapData = {
 const CELL = 120;
 const MIN_ZOOM = 0.35;
 const MAX_ZOOM = 2.4;
+const ISLAND_TEXTURE_SIZE = 150;
 const FONT = '"Lilita One", "Arial Rounded MT Bold", Arial, sans-serif';
 const label = (size: number, extra: Phaser.Types.GameObjects.Text.TextStyle = {}): Phaser.Types.GameObjects.Text.TextStyle =>
   ({ fontFamily: FONT, fontSize: `${size}px`, color: '#ffffff', stroke: '#3b2414', strokeThickness: Math.max(3, size / 4), resolution: 2, ...extra });
@@ -30,14 +31,19 @@ export function islandPos(island: number, mapSize: number) {
   return { x: x * CELL + CELL / 2 + jx, y: y * CELL + CELL / 2 + jy };
 }
 
-/** Drag to pan, wheel or pinch to zoom, tap to select. Shared by the sea map and the island view. */
-/** `locked` keeps taps but disables drag, pinch and wheel (the island view has a fixed size). */
-function panZoom(scene: Phaser.Scene, onTap: (wx: number, wy: number) => void, minZoom = MIN_ZOOM, maxZoom = MAX_ZOOM, locked = false) {
-  let drag: { x: number; y: number; sx: number; sy: number } | null = null;
+/** Handle map gestures. The locked island view accepts taps and keeps its fitted size. */
+function panZoom(scene: Phaser.Scene, locked = false) {
+  let drag: { id: number; x: number; y: number; sx: number; sy: number } | null = null;
   let pinch: { dist: number; zoom: number } | null = null;
   let moved = false;
   const input = scene.input;
   input.addPointer(1);
+  scene.events.on(Phaser.Scenes.Events.SLEEP, () => {
+    drag = null;
+    pinch = null;
+    // The outgoing scene can sleep before Phaser sends its pointer-out event.
+    input.setDefaultCursor('');
+  });
   const syncPinch = () => {
     const p1 = input.pointer1, p2 = input.pointer2;
     if (!p1.isDown || !p2.isDown) return false;
@@ -46,7 +52,7 @@ function panZoom(scene: Phaser.Scene, onTap: (wx: number, wy: number) => void, m
     if (!pinch) {
       if (dist > 0) pinch = { dist, zoom: cam.zoom };
     } else if (!locked && dist > 0 && pinch.dist > 0) {
-      cam.setZoom(Phaser.Math.Clamp(pinch.zoom * dist / pinch.dist, minZoom, maxZoom));
+      cam.setZoom(Phaser.Math.Clamp(pinch.zoom * dist / pinch.dist, MIN_ZOOM, MAX_ZOOM));
     }
     drag = null;
     moved = true;
@@ -54,41 +60,47 @@ function panZoom(scene: Phaser.Scene, onTap: (wx: number, wy: number) => void, m
   };
   input.on('pointerdown', (p: Phaser.Input.Pointer) => {
     if (syncPinch()) return;
+    if (drag) { moved = true; return; }
     moved = false;
-    drag = { x: p.x, y: p.y, sx: scene.cameras.main.scrollX, sy: scene.cameras.main.scrollY };
+    drag = { id: p.id, x: p.x, y: p.y, sx: scene.cameras.main.scrollX, sy: scene.cameras.main.scrollY };
   });
   input.on('pointermove', (p: Phaser.Input.Pointer) => {
     if (syncPinch()) return;
-    if (!p.isDown || !drag) return;
-    const cam = scene.cameras.main;
+    if (!p.isDown || drag?.id !== p.id) return;
     const dx = p.x - drag.x, dy = p.y - drag.y;
     if (Math.abs(dx) + Math.abs(dy) > 8) moved = true;
     if (locked) return;
+    const cam = scene.cameras.main;
     cam.scrollX = drag.sx - dx / cam.zoom;
     cam.scrollY = drag.sy - dy / cam.zoom;
   });
-  const endPointer = (p: Phaser.Input.Pointer, cancelled = false) => {
+  function release(p: Phaser.Input.Pointer, objects: Phaser.GameObjects.GameObject[] = []) {
     if (!input.pointer1.isDown || !input.pointer2.isDown) pinch = null;
-    const tap = !cancelled && !moved && drag;
+    if (drag?.id !== p.id) return;
+    const tap = !moved && Math.abs(p.x - drag.x) + Math.abs(p.y - drag.y) <= 8;
     drag = null;
-    if (!tap) return;
-    const wp = scene.cameras.main.getWorldPoint(p.x, p.y);
-    onTap(wp.x, wp.y);
-  };
-  input.on('pointerup', (p: Phaser.Input.Pointer) => endPointer(p));
-  input.on('pointerupoutside', (p: Phaser.Input.Pointer) => endPointer(p, true));
-  input.on('pointercancel', (p: Phaser.Input.Pointer) => endPointer(p, true));
+    // Phaser supplies the same ordered hit-test results used for hover.
+    if (tap) objects[0]?.emit('maptap');
+  }
+  input.on('pointerup', release);
+  input.on('pointerupoutside', (p: Phaser.Input.Pointer) => release(p));
+  input.on('pointercancel', (p: Phaser.Input.Pointer) => release(p));
   input.on('wheel', (_p: unknown, _o: unknown, _dx: number, dy: number) => {
     if (locked) return;
     const cam = scene.cameras.main;
-    cam.setZoom(Phaser.Math.Clamp(cam.zoom * (dy > 0 ? 0.9 : 1.1), minZoom, maxZoom));
+    cam.setZoom(Phaser.Math.Clamp(cam.zoom * (dy > 0 ? 0.9 : 1.1), MIN_ZOOM, MAX_ZOOM));
   });
 }
 
 /** Grow slightly while the pointer is over a game object (desktop hover feedback). */
 function hoverGrow(scene: Phaser.Scene, obj: Phaser.GameObjects.Components.Transform & Phaser.GameObjects.GameObject, base = 1, grow = 1.12) {
-  obj.on('pointerover', () => scene.tweens.add({ targets: obj, scale: base * grow, duration: 140, ease: 'Back.out' }));
-  obj.on('pointerout', () => scene.tweens.add({ targets: obj, scale: base, duration: 140, ease: 'Sine.out' }));
+  let tween: Phaser.Tweens.Tween | undefined;
+  const animate = (scale: number) => {
+    tween?.stop();
+    tween = scene.tweens.add({ targets: obj, scale, duration: 140, ease: 'Sine.out' });
+  };
+  obj.on('pointerover', () => animate(base * grow));
+  obj.on('pointerout', () => animate(base));
 }
 
 // ================================================================ sea map
@@ -124,43 +136,26 @@ class SeaScene extends Phaser.Scene {
     this.ship = this.add.container(0, 0, [this.hull]).setDepth(6).setVisible(false);
     this.tweens.add({ targets: this.hull, y: 5, angle: { from: -5, to: 5 }, duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
     this.tweens.add({ targets: this.bossMark, scale: 0.6, duration: 650, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
-    panZoom(this, (wx, wy) => {
-      if (!this.data_ || this.sailing) return;
-      const best = this.islandAt(wx, wy);
-      if (best >= 0) this.onSelect(best);
-    });
+    panZoom(this);
     this.cameras.main.setZoom(this.scale.width < 600 ? 0.95 : 1);
     if (this.data_) this.redraw();
   }
 
-  private islandAt(wx: number, wy: number) {
-    const d = this.data_!;
-    let best = -1, bestD = 56;
-    for (const island of new Set([...d.visited, ...d.partnerVisited])) {
-      const pos = islandPos(island, d.mapSize);
-      const dist = Phaser.Math.Distance.Between(wx, wy, pos.x, pos.y);
-      if (dist < bestD) { best = island; bestD = dist; }
-    }
-    return best;
-  }
-
-  private islandTexture(island: number, kind: 'mine' | 'partner' | 'home' | 'other') {
+  private islandTexture(island: number, kind: 'mine' | 'partner' | 'home' | 'other', blobs: ReturnType<typeof islandBlobs>['blobs'], surf: Phaser.Geom.Circle[]) {
     const key = `isl-${island}-${kind}`;
     if (this.textures.exists(key)) return key;
     const d = this.data_!;
-    const { blobs, deco } = islandBlobs(d.seed, island) as { blobs: { x: number; y: number; r: number }[]; deco: number };
     const theme = THEMES[islandTheme(d.seed, island)];
-    const s = TEX, size = 150, c = size / 2;
+    const s = TEX, size = ISLAND_TEXTURE_SIZE, c = size / 2;
     const g = this.make.graphics({}, false);
     const at = (v: number) => (c + v) * s;
-    g.fillStyle(0x7fe3f5, 0.75); for (const b of blobs) g.fillCircle(at(b.x), at(b.y + 4), (b.r + 9) * s);
+    g.fillStyle(0x7fe3f5, 0.75); for (const circle of surf) g.fillCircleShape(circle);
     g.fillStyle(INK); for (const b of blobs) g.fillCircle(at(b.x), at(b.y + 2), (b.r + 2.5) * s);
     g.fillStyle(kind === 'partner' ? 0xe9dcc0 : theme.sand); for (const b of blobs) g.fillCircle(at(b.x), at(b.y), b.r * s);
     g.fillStyle(kind === 'partner' ? 0x9fbf9a : theme.grass); for (const b of blobs) g.fillCircle(at(b.x * 0.85), at(b.y * 0.85 - 4), Math.max(4, b.r - 7) * s);
     g.fillStyle(0xffffff, 0.35).fillCircle(at(blobs[0].x - 8), at(blobs[0].y - 10), 5 * s);
     g.generateTexture(key, size * s, size * s);
     g.destroy();
-    void deco; // the sea view uses the theme tree instead (added in redraw)
     return key;
   }
 
@@ -235,8 +230,15 @@ class SeaScene extends Phaser.Scene {
       const pos = islandPos(island, d.mapSize);
       const mine = d.visited.has(island);
       const kind = island === d.home ? 'home' : d.otherHomes.has(island) ? 'other' : mine ? 'mine' : 'partner';
-      const img = this.add.image(pos.x, pos.y, this.islandTexture(island, kind)).setScale(1 / TEX).setAlpha(mine ? 1 : 0.6);
-      img.setInteractive({ hitArea: new Phaser.Geom.Circle(150, 150, 110), hitAreaCallback: Phaser.Geom.Circle.Contains, useHandCursor: true });
+      const { blobs } = islandBlobs(d.seed, island);
+      const at = (v: number) => (ISLAND_TEXTURE_SIZE / 2 + v) * TEX;
+      const surf = blobs.map(b => new Phaser.Geom.Circle(at(b.x), at(b.y + 4), (b.r + 9) * TEX));
+      const img = this.add.image(pos.x, pos.y, this.islandTexture(island, kind, blobs, surf)).setScale(1 / TEX).setAlpha(mine ? 1 : 0.6);
+      // Phaser undoes the image transform before testing, so these circles use source texture pixels.
+      img.setInteractive({ hitArea: new Phaser.Geom.Rectangle(0, 0, img.width, img.height),
+        hitAreaCallback: (frame: Phaser.Geom.Rectangle, x: number, y: number) =>
+          frame.contains(x, y) && surf.some(circle => circle.contains(x, y)), useHandCursor: true });
+      img.on('maptap', () => { if (!this.sailing) this.onSelect(island); });
       hoverGrow(this, img, 1 / TEX, 1.12);
       const parts: Phaser.GameObjects.GameObject[] = [img];
       // A little scenery on top of the island texture: theme tree plus a hut on bases.
@@ -390,7 +392,7 @@ class IslandScene extends Phaser.Scene {
     this.g = this.add.graphics().setDepth(0);
     this.layer = this.add.container(0, 0).setDepth(1);
     this.tweens.add({ targets: this.foam, alpha: { from: 0.35, to: 0.9 }, scale: { from: 1, to: 1.025 }, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
-    panZoom(this, (wx, wy) => this.tap(wx, wy), 0.3, 2.5, true); // fixed size ashore: no zoom or drag
+    panZoom(this, true);
     this.cameras.main.setBounds(-40 * T, -40 * T, 80 * T, 80 * T); // roomy, so fitting above the panel is never clamped
     this.scale.on('resize', () => this.fit());
     if (this.data_) this.redraw();
@@ -425,42 +427,31 @@ class IslandScene extends Phaser.Scene {
     return { x: Math.cos(angle) * 5 * T, y: Math.sin(angle) * 5 * T };
   }
 
-  private tap(wx: number, wy: number) {
-    const d = this.data_;
-    if (!d) return;
-    for (const dock of d.docks) {
-      const p = this.dockPos(dock.angle);
-      if (Phaser.Math.Distance.Between(wx, wy, p.x, p.y) < 44) return this.onDock(dock.dir);
-    }
-    const col = Math.round(wx / T) + 4, row = Math.round(wy / T) + 4;
-    if (col < 0 || col >= GRID || row < 0 || row >= GRID) return;
-    const tile = row * GRID + col;
-    const pole = d.poles.findIndex(p => p.tile === tile);
-    if (pole >= 0) return this.onPole(pole);
-    if (!d.poles.length && tile === CENTER_TILE) return this.onTile(tile); // the empty centre sign
-    if (d.placing && isLand(d.seed, d.island, tile) && tile !== CENTER_TILE) this.onTile(tile);
-  }
-
   private put(key: string, x: number, y: number, scale = 0.5, origin = 0.9) {
     const img = this.add.image(x, y, key).setOrigin(0.5, origin).setScale(scale).setDepth(depthAt(y));
     this.layer.add(img);
     return img;
   }
 
-  private poleObj(x: number, y: number, color: number, text: string, big: boolean, selected: boolean, ghost = false) {
+  private poleObj(x: number, y: number, color: number, text: string, big: boolean, selected: boolean,
+    onTap?: () => void, ghost = false) {
     const k = big ? 1.35 : 1;
+    const post = { x: -5 * k, y: -26 * k, w: 10 * k, h: 44 * k, r: 3 * k };
+    const sign = { x: -23 * k, y: -47 * k, w: 46 * k, h: 27 * k, r: 8 * k };
+    const lantern = { x: -9, y: -76, w: 18, h: 20, r: 6 };
+    const solids = big ? [post, sign, lantern] : [post, sign];
     const g = this.add.graphics();
     g.fillStyle(0x000000, 0.18).fillEllipse(0, 16 * k, 28 * k, 8 * k);
-    g.fillStyle(INK).fillRoundedRect(-5 * k, -26 * k, 10 * k, 44 * k, 3 * k);
+    g.fillStyle(INK).fillRoundedRect(post.x, post.y, post.w, post.h, post.r);
     g.fillStyle(0xa8672e).fillRoundedRect(-3 * k, -24 * k, 6 * k, 40 * k, 2 * k);
-    g.fillStyle(INK).fillRoundedRect(-23 * k, -47 * k, 46 * k, 27 * k, 8 * k);
+    g.fillStyle(INK).fillRoundedRect(sign.x, sign.y, sign.w, sign.h, sign.r);
     g.fillStyle(color).fillRoundedRect(-20 * k, -44 * k, 40 * k, 21 * k, 6 * k);
     g.fillStyle(0xffffff, 0.35).fillRoundedRect(-16 * k, -42 * k, 32 * k, 5 * k, 2 * k);
     const parts: Phaser.GameObjects.GameObject[] = [g];
     if (big) {
       const glow = this.add.circle(0, -66, 26, 0xffd75e, 0.35);
       const lamp = this.add.graphics();
-      lamp.fillStyle(INK).fillRoundedRect(-9, -76, 18, 20, 6);
+      lamp.fillStyle(INK).fillRoundedRect(lantern.x, lantern.y, lantern.w, lantern.h, lantern.r);
       lamp.fillStyle(0xffc93c).fillRoundedRect(-6.5, -73.5, 13, 15, 4);
       lamp.fillStyle(0xfff6c0).fillRoundedRect(-3, -70, 6, 8, 2);
       parts.push(glow, lamp);
@@ -468,10 +459,20 @@ class IslandScene extends Phaser.Scene {
     }
     parts.push(this.add.text(0, -34 * k, text, label(Math.round(16 * k))).setOrigin(0.5));
     const c = this.add.container(x, y, parts).setDepth(depthAt(y) + 0.5).setAlpha(ghost ? 0.6 : 1);
-    c.setSize(56 * k, 100 * k);
-    c.setInteractive({ hitArea: new Phaser.Geom.Rectangle(-28 * k, -80 * k, 56 * k, 100 * k), hitAreaCallback: Phaser.Geom.Rectangle.Contains, useHandCursor: true });
-    hoverGrow(this, c, 1, 1.1);
-    if (selected) this.tweens.add({ targets: parts, y: '-=8', duration: 420, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+    if (onTap) {
+      const top = big ? lantern.y : sign.y;
+      // Leave the container unsized to keep its input origin at the artwork's local (0, 0).
+      c.setInteractive({ hitArea: new Phaser.Geom.Rectangle(sign.x, top, sign.w, post.y + post.h - top),
+        hitAreaCallback: (bounds: Phaser.Geom.Rectangle, x: number, y: number) => bounds.contains(x, y) &&
+          solids.some(({ x: left, y: top, w, h, r }) => {
+            const dx = x - Phaser.Math.Clamp(x, left + r, left + w - r);
+            const dy = y - Phaser.Math.Clamp(y, top + r, top + h - r);
+            return dx * dx + dy * dy <= r * r;
+          }), useHandCursor: true });
+      c.on('maptap', onTap);
+      hoverGrow(this, c, 1, 1.1);
+    }
+    if (selected) this.tweens.add({ targets: c, y: y - 8, duration: 420, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
     if (ghost) this.tweens.add({ targets: c, alpha: { from: 0.35, to: 0.8 }, duration: 600, yoyo: true, repeat: -1 });
     this.layer.add(c);
     return c;
@@ -495,12 +496,14 @@ class IslandScene extends Phaser.Scene {
     this.layer.add(boat);
     const color = dock.coop ? 0x6a3fd0 : dock.cost === 2 ? 0xe8950c : 0x1fb59a;
     const g = this.add.graphics();
-    g.fillStyle(INK).fillCircle(0, 0, 31);
+    const button = new Phaser.Geom.Circle(0, 0, 31);
+    g.fillStyle(INK).fillCircleShape(button);
     g.fillStyle(color).fillCircle(0, 0, 27);
     g.fillStyle(0xffffff, 0.35).fillEllipse(-6, -12, 26, 8);
     const c = this.add.container(p.x, p.y, [g, this.add.text(0, 0, dock.coop ? `${dock.cost}★` : `${dock.cost}`, label(24)).setOrigin(0.5)])
       .setDepth(depthAt(p.y) + 1);
-    c.setSize(70, 70).setInteractive({ hitArea: new Phaser.Geom.Circle(0, 0, 34), hitAreaCallback: Phaser.Geom.Circle.Contains, useHandCursor: true });
+    c.setInteractive({ hitArea: button, hitAreaCallback: Phaser.Geom.Circle.Contains, useHandCursor: true });
+    c.on('maptap', () => this.onDock(dock.dir));
     hoverGrow(this, c, 1, 1.15);
     this.layer.add([c, this.add.text(p.x + Math.cos(dock.angle) * 46, p.y + Math.sin(dock.angle) * 46, dock.label, label(16, { align: 'center' })).setOrigin(0.5).setDepth(depthAt(p.y) + 1)]);
   }
@@ -551,18 +554,21 @@ class IslandScene extends Phaser.Scene {
     let campfire = -1;
     for (const t of tiles) if (inner(t) && t !== CENTER_TILE && !taken.has(t) && !onPath.has(t) && !homeTiles.has(t) && tileDeco(d.seed, d.island, t) === 0) { campfire = t; break; }
     for (const t of tiles) {
-      if (taken.has(t) || t === CENTER_TILE || t === d.pick || homeTiles.has(t)) continue;
+      if (taken.has(t) || t === CENTER_TILE || t === d.pick) continue;
       const p = tileXY(t);
-      if (d.placing) {
-        const hint = this.add.circle(p.x, p.y, T * 0.34, 0xffffff, 0.3).setStrokeStyle(4, 0xffffff, 0.95).setDepth(depthAt(p.y));
-        hint.setInteractive({ useHandCursor: true });
+      if (d.placing && d.poles.length > 0) {
+        const radius = T * 0.34;
+        const hint = this.add.circle(p.x, p.y, radius, 0xffffff, 0.3).setStrokeStyle(4, 0xffffff, 0.95).setDepth(depthAt(p.y));
+        hint.setInteractive({ hitArea: new Phaser.Geom.Circle(radius, radius, radius + 2),
+          hitAreaCallback: Phaser.Geom.Circle.Contains, useHandCursor: true });
+        hint.on('maptap', () => this.onTile(t));
         hint.on('pointerover', () => hint.setFillStyle(0xffd75e, 0.7));
         hint.on('pointerout', () => hint.setFillStyle(0xffffff, 0.3));
         this.tweens.add({ targets: hint, scale: { from: 0.9, to: 1.08 }, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.inOut', delay: (t * 37) % 400 });
         this.layer.add(hint);
         continue;
       }
-      if (onPath.has(t)) continue;
+      if (onPath.has(t) || homeTiles.has(t)) continue;
       if (t === campfire) {
         this.put('logs', p.x, p.y + 6, 0.55, 0.5);
         const flame = this.put('flame', p.x, p.y + 4, 0.55, 1);
@@ -603,12 +609,15 @@ class IslandScene extends Phaser.Scene {
     if (d.isHome) this.put('hut', -0.6 * T, -1.15 * T, 0.72, 0.9);
 
     // Note poles: the first stands in the centre with a lantern; others wherever their builders chose.
-    if (!d.poles.length) { const c = tileXY(CENTER_TILE); this.poleObj(c.x, c.y, 0xfff6e0, d.placing ? '+' : '?', true, false, true); }
+    if (!d.poles.length) {
+      const c = tileXY(CENTER_TILE);
+      this.poleObj(c.x, c.y, 0xfff6e0, '?', true, false, d.placing ? () => this.onTile(CENTER_TILE) : undefined, true);
+    }
     d.poles.forEach((p, i) => {
       const xy = tileXY(p.tile);
-      this.poleObj(xy.x, xy.y, i === 0 ? 0xffc93c : colorOf(p.author), String(i + 1), i === 0, d.selectedPole === i);
+      this.poleObj(xy.x, xy.y, i === 0 ? 0xffc93c : colorOf(p.author), String(i + 1), i === 0, d.selectedPole === i, () => this.onPole(i));
     });
-    if (d.pick !== null) { const xy = tileXY(d.pick); this.poleObj(xy.x, xy.y, 0xffffff, '+', false, true, true); }
+    if (d.pick !== null) { const xy = tileXY(d.pick); this.poleObj(xy.x, xy.y, 0xffffff, '+', false, true, undefined, true); }
 
     // Life: gulls gliding over and cloud shadows drifting across.
     for (let i = 0; i < 2; i++) {

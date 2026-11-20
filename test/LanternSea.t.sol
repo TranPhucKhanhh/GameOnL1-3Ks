@@ -284,7 +284,7 @@ contract LanternSeaTest {
 
     function testCoopVoyageBothSolveInWindowLandsWithGem() public {
         (uint256 id, address a, address b, uint16 to) = _proposeCoop();
-        bool fresh = sea.firstFinder(to) == address(0);
+        _ok(sea.firstFinder(to) == address(0), "EXPECTED_FRESH_ISLAND");
         vm.warp(block.timestamp + 20);
         bytes memory solA = _solution(id, a);
         vm.prank(a);
@@ -296,13 +296,31 @@ contract LanternSeaTest {
         (uint8 status,) = _started(id);
         _eq(status, uint8(CoopSail.Status.Landed), "LANDED");
         _ok(sea.visited(a, to) && sea.visited(b, to), "BOTH_VISITED");
-        if (fresh) {
-            uint8 gem = sea.gemTypeOf(to);
-            _eq(sea.captainView(a).gems[gem], 1, "GEM_A");
-            _eq(sea.captainView(b).gems[gem], 1, "GEM_B");
-            // Slowest solver took 30 of 60 seconds: speed 50% -> 60 + 40 * 0.5 = 80 coins.
-            _eq(_coins(b), 80, "COOP_COINS");
-        }
+        uint8 gem = sea.gemTypeOf(to);
+        _eq(sea.captainView(a).gems[gem], 1, "GEM_A");
+        _eq(sea.captainView(b).gems[gem], 1, "GEM_B");
+        // Slowest solver took 30 of 60 seconds: speed 50% -> 60 + 40 * 0.5 = 80 coins.
+        _eq(_coins(a), 80, "COOP_COINS_A");
+        _eq(_coins(b), 80, "COOP_COINS_B");
+
+        (,, uint16 from,, uint8 dir,,,,,,,) = coop.voyages(id);
+        vm.warp(block.timestamp + 3 minutes);
+        vm.prank(a);
+        uint256 repeat = coop.propose(b, from, dir, 2);
+        vm.prank(b);
+        coop.join(repeat);
+        solA = _solution(repeat, a);
+        solB = _solution(repeat, b);
+        vm.prank(a);
+        coop.solve(repeat, solA);
+        vm.prank(b);
+        coop.solve(repeat, solB);
+        (,,,,,,, CoopSail.Status repeatedStatus,,,, bool fresh) = coop.voyages(repeat);
+        _ok(repeatedStatus == CoopSail.Status.Landed && !fresh, "REVISIT_LANDED");
+        _eq(_coins(a), 80, "REVISIT_NO_COINS_A");
+        _eq(_coins(b), 80, "REVISIT_NO_COINS_B");
+        _eq(sea.captainView(a).gems[gem], 1, "REVISIT_NO_GEMS_A");
+        _eq(sea.captainView(b).gems[gem], 1, "REVISIT_NO_GEMS_B");
     }
 
     function testCoopWrongSolutionReverts() public {
@@ -313,20 +331,25 @@ contract LanternSeaTest {
     }
 
     function testCoopWindowClosesAndVoyageIsLost() public {
-        (uint256 id, address a,,) = _proposeCoop();
+        (uint256 id, address a, address b, uint16 to) = _proposeCoop();
         bytes memory solA = _solution(id, a);
         vm.prank(a);
         coop.solve(id, solA);
-        vm.warp(block.timestamp + 61);
+        vm.warp(block.timestamp + 60);
+        vm.expectRevert(CoopSail.WindowOpen.selector);
+        coop.expire(id);
+        vm.warp(block.timestamp + 1);
         vm.prank(bob);
         vm.expectRevert(CoopSail.WindowClosed.selector);
         coop.solve(id, hex"00");
         coop.expire(id);
         (uint8 status,) = _started(id);
         _eq(status, uint8(CoopSail.Status.Lost), "LOST");
+        _ok(!sea.visited(a, to) && !sea.visited(b, to), "NO_LANDING");
+        _eq(_coins(a) + _coins(b), 0, "NO_COINS");
     }
 
-    function testCoopOnlyPartnerCanJoin() public {
+    function testCoopRejectsWrongAccountAndCancelsWithoutCharge() public {
         (address a, uint8 dir) = _captainWithLane(true, 1000);
         _register(bob);
         _register(alice);
@@ -336,6 +359,18 @@ contract LanternSeaTest {
         vm.prank(alice);
         vm.expectRevert(CoopSail.NotCrew.selector);
         coop.join(id);
+        vm.prank(alice);
+        vm.expectRevert(CoopSail.NotCrew.selector);
+        coop.cancel(id);
+        vm.prank(a);
+        coop.cancel(id);
+        (uint8 status,) = _started(id);
+        _eq(status, uint8(CoopSail.Status.Cancelled), "CANCELLED");
+        vm.prank(bob);
+        vm.expectRevert(CoopSail.WrongStatus.selector);
+        coop.join(id);
+        _eq(sea.captainView(a).charges, 3, "CANCEL_NO_CHARGE_A");
+        _eq(sea.captainView(bob).charges, 3, "CANCEL_NO_CHARGE_B");
         vm.prank(a);
         vm.expectRevert(CoopSail.BadCharges.selector);
         coop.propose(bob, home, dir, 0);
@@ -493,7 +528,7 @@ contract LanternSeaTest {
 
     function testGemsSellForCoinsOnly() public {
         (uint256 id, address a, address b, uint16 to) = _proposeCoop();
-        if (sea.firstFinder(to) != address(0)) return;
+        _ok(sea.firstFinder(to) == address(0), "EXPECTED_FRESH_ISLAND");
         bytes memory solA = _solution(id, a);
         bytes memory solB = _solution(id, b);
         vm.prank(a);
@@ -505,6 +540,7 @@ contract LanternSeaTest {
         vm.prank(a);
         sea.sellGems(gem, 1);
         _eq(_coins(a), before + sea.gemPrice(gem), "GEM_PRICE");
+        _eq(sea.captainView(a).gems[gem], 0, "GEM_DEDUCTED");
         vm.prank(a);
         vm.expectRevert(LanternSea.NotEnoughGems.selector);
         sea.sellGems(gem, 1);
@@ -512,7 +548,7 @@ contract LanternSeaTest {
 
     // ------------------------------------------------------------ boss raid + ICM escrow
 
-    function _openRaid() private returns (uint256 raidId) {
+    function _acceptRaid() private returns (uint256 raidId, Message memory opening) {
         vm.warp(RAID_TIME);
         _register(alice);
         _register(bob);
@@ -521,19 +557,29 @@ contract LanternSeaTest {
         vm.recordLogs();
         vm.prank(bob);
         raid.acceptLead(raidId);
-        _toEscrow(_message(address(gameMessenger)));
+        opening = _message(address(gameMessenger));
+    }
+
+    function _openRaid() private returns (uint256) {
+        (uint256 raidId, Message memory opening) = _acceptRaid();
+        _toEscrow(opening);
         (,, RaidEscrow.Status status,,,) = escrow.raids(raidId);
         _eq(uint8(status), uint8(RaidEscrow.Status.Open), "ESCROW_OPEN");
+        return raidId;
     }
 
     function _fund(address who, uint256 amount, uint256 raidId) private {
+        _toGame(_queueFunding(who, amount, raidId));
+    }
+
+    function _queueFunding(address who, uint256 amount, uint256 raidId) private returns (Message memory) {
         vm.startPrank(who);
         usdc.faucet();
         usdc.approve(address(escrow), amount);
         vm.recordLogs();
         escrow.fund(raidId, amount);
         vm.stopPrank();
-        _toGame(_message(address(cMessenger)));
+        return _message(address(cMessenger));
     }
 
     function _powerUp(address who) private {
@@ -562,9 +608,20 @@ contract LanternSeaTest {
         vm.prank(helper);
         raid.attack(raidId); // base power 10
         _eq(raid.damageOf(raidId, helper), 10, "HELPER_DMG");
+        _eq(sea.captainView(helper).charges, 2, "HELPER_PAID_ONE_CHARGE");
+        (address[] memory helpers, uint256[] memory damage) = raid.helpersOf(raidId);
+        _ok(helpers.length == 1 && helpers[0] == helper && damage[0] == 10, "DAMAGE_BOARD");
+
+        vm.prank(alice);
+        raid.attack(raidId);
+        _eq(raid.damageOf(raidId, alice), 40, "BASE_CREW_DAMAGE");
 
         _powerUp(alice);
         _powerUp(bob);
+        uint256 crewBefore = yard.crewPower(alice, bob);
+        vm.prank(alice);
+        yard.upgrade(true);
+        _ok(yard.crewPower(alice, bob) > crewBefore && crewBefore > 40, "PARTS_AND_UPGRADE_INCREASE_POWER");
         vm.prank(alice);
         raid.attack(raidId); // crew power ~1590 finishes the boss
         _eq(uint8(raid.raidView(raidId).status), uint8(BossRaid.Status.Defeated), "DEFEATED");
@@ -573,7 +630,8 @@ contract LanternSeaTest {
         raid.settle(raidId);
         _toEscrow(_message(address(gameMessenger)));
         (,, uint256 coins,) = raid.bossOf(raidId);
-        _eq(_coins(alice), 5000 - 2500 + coins / 2, "LEAD_COINS");
+        _eq(_coins(alice), 5000 - 2500 - 40 + coins / 2, "LEAD_A_COINS");
+        _eq(_coins(bob), 5000 - 2500 + coins / 2, "LEAD_B_COINS");
 
         // Helper earns 40 USDC * 10 / 1500.
         uint256 bounty = 40e6;
@@ -594,6 +652,7 @@ contract LanternSeaTest {
     function testRaidFailedRefundsFunders() public {
         uint256 raidId = _openRaid();
         _fund(alice, 20e6, raidId);
+        _fund(bob, 35e6, raidId);
         address helper = address(0xBEEF);
         _register(helper);
         vm.prank(helper);
@@ -601,6 +660,7 @@ contract LanternSeaTest {
         vm.expectRevert(BossRaid.RaidRunning.selector);
         raid.settle(raidId);
         vm.warp(RAID_TIME + 600);
+        _eq(raid.currentRaidId(), raidId + 1, "PREVIOUS_EPOCH");
         vm.prank(helper);
         vm.expectRevert(BossRaid.RaidOver.selector);
         raid.attack(raidId);
@@ -609,6 +669,7 @@ contract LanternSeaTest {
         _toEscrow(_message(address(gameMessenger)));
         _eq(escrow.claimable(helper), 0, "NO_PAY_ON_FAIL");
         _eq(escrow.claimable(alice), 20e6, "FULL_REFUND");
+        _eq(escrow.claimable(bob), 35e6, "PARTNER_FULL_REFUND");
         _eq(_coins(alice), 0, "NO_BOSS_COINS");
         _solvent();
     }
@@ -626,6 +687,9 @@ contract LanternSeaTest {
 
     function testEscrowOnlyLeadsFundWithinCapAndDeadline() public {
         uint256 raidId = _openRaid();
+        _fund(alice, 60e6, raidId);
+        _fund(bob, 40e6, raidId);
+        _eq(raid.raidView(raidId).bounty, 100e6, "COMBINED_CAP");
         address stranger = address(0xCAFE);
         vm.startPrank(stranger);
         usdc.faucet();
@@ -634,15 +698,36 @@ contract LanternSeaTest {
         escrow.fund(raidId, 10e6);
         vm.stopPrank();
         vm.startPrank(alice);
-        usdc.faucet();
-        usdc.approve(address(escrow), 101e6);
+        usdc.approve(address(escrow), 1e6);
         vm.expectRevert(RaidEscrow.BadAmount.selector);
-        escrow.fund(raidId, 101e6);
+        escrow.fund(raidId, 1e6);
         vm.stopPrank();
         vm.warp(RAID_TIME + 600);
         vm.prank(alice);
         vm.expectRevert(RaidEscrow.TooLate.selector);
         escrow.fund(raidId, 1e6);
+    }
+
+    function testLateFundingReceiptDoesNotReduceBounty() public {
+        uint256 raidId = _openRaid();
+        Message memory first = _queueFunding(alice, 15e6, raidId);
+        Message memory second = _queueFunding(bob, 20e6, raidId);
+        _toGame(second);
+        _toGame(first);
+        _eq(raid.raidView(raidId).bounty, 35e6, "LATEST_TOTAL");
+        _solvent();
+    }
+
+    function testSettlementBeforeOpeningLeavesEscrowClosed() public {
+        (uint256 raidId, Message memory opening) = _acceptRaid();
+        vm.warp(RAID_TIME + 600);
+        vm.recordLogs();
+        raid.settle(raidId);
+        _toEscrow(_message(address(gameMessenger)));
+        _toEscrow(opening);
+        (,, RaidEscrow.Status status,,,) = escrow.raids(raidId);
+        _eq(uint8(status), uint8(RaidEscrow.Status.Settled), "LATE_OPEN_CANNOT_REOPEN");
+        _solvent();
     }
 
     function testEndpointsRejectForgedMessages() public {
