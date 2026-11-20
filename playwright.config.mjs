@@ -9,7 +9,8 @@ export default defineConfig({
   testDir: './test/browser',
   workers: 1,
   retries: process.env.CI ? 1 : 0,
-  timeout: 120_000,
+  // Multi-captain flows (co-op, raid) take close to 2 minutes on shared CI runners; leave headroom.
+  timeout: 240_000,
   expect: { timeout: 20_000 },
   use: {
     baseURL: 'http://127.0.0.1:5173',

@@ -31,7 +31,8 @@ export function islandPos(island: number, mapSize: number) {
 }
 
 /** Drag to pan, wheel or pinch to zoom, tap to select. Shared by the sea map and the island view. */
-function panZoom(scene: Phaser.Scene, onTap: (wx: number, wy: number) => void, minZoom = MIN_ZOOM, maxZoom = MAX_ZOOM) {
+/** `locked` keeps taps but disables drag, pinch and wheel (the island view has a fixed size). */
+function panZoom(scene: Phaser.Scene, onTap: (wx: number, wy: number) => void, minZoom = MIN_ZOOM, maxZoom = MAX_ZOOM, locked = false) {
   let drag: { x: number; y: number; sx: number; sy: number } | null = null;
   let pinch: { dist: number; zoom: number } | null = null;
   let moved = false;
@@ -44,7 +45,7 @@ function panZoom(scene: Phaser.Scene, onTap: (wx: number, wy: number) => void, m
     const cam = scene.cameras.main;
     if (!pinch) {
       if (dist > 0) pinch = { dist, zoom: cam.zoom };
-    } else if (dist > 0 && pinch.dist > 0) {
+    } else if (!locked && dist > 0 && pinch.dist > 0) {
       cam.setZoom(Phaser.Math.Clamp(pinch.zoom * dist / pinch.dist, minZoom, maxZoom));
     }
     drag = null;
@@ -62,6 +63,7 @@ function panZoom(scene: Phaser.Scene, onTap: (wx: number, wy: number) => void, m
     const cam = scene.cameras.main;
     const dx = p.x - drag.x, dy = p.y - drag.y;
     if (Math.abs(dx) + Math.abs(dy) > 8) moved = true;
+    if (locked) return;
     cam.scrollX = drag.sx - dx / cam.zoom;
     cam.scrollY = drag.sy - dy / cam.zoom;
   });
@@ -77,6 +79,7 @@ function panZoom(scene: Phaser.Scene, onTap: (wx: number, wy: number) => void, m
   input.on('pointerupoutside', (p: Phaser.Input.Pointer) => endPointer(p, true));
   input.on('pointercancel', (p: Phaser.Input.Pointer) => endPointer(p, true));
   input.on('wheel', (_p: unknown, _o: unknown, _dx: number, dy: number) => {
+    if (locked) return;
     const cam = scene.cameras.main;
     cam.setZoom(Phaser.Math.Clamp(cam.zoom * (dy > 0 ? 0.9 : 1.1), minZoom, maxZoom));
   });
@@ -387,8 +390,9 @@ class IslandScene extends Phaser.Scene {
     this.g = this.add.graphics().setDepth(0);
     this.layer = this.add.container(0, 0).setDepth(1);
     this.tweens.add({ targets: this.foam, alpha: { from: 0.35, to: 0.9 }, scale: { from: 1, to: 1.025 }, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
-    panZoom(this, (wx, wy) => this.tap(wx, wy), 0.3, 2.5);
+    panZoom(this, (wx, wy) => this.tap(wx, wy), 0.3, 2.5, true); // fixed size ashore: no zoom or drag
     this.cameras.main.setBounds(-40 * T, -40 * T, 80 * T, 80 * T); // roomy, so fitting above the panel is never clamped
+    this.scale.on('resize', () => this.fit());
     if (this.data_) this.redraw();
   }
 
@@ -404,6 +408,17 @@ class IslandScene extends Phaser.Scene {
     const w = this.scale.width - this.insets.right, h = this.scale.height - this.insets.top - this.insets.bottom;
     cam.setZoom(Phaser.Math.Clamp(Math.min(w, h) / (12.6 * T), 0.3, 1.6));
     cam.centerOn(this.insets.right / 2 / cam.zoom, (this.insets.bottom - this.insets.top) / 2 / cam.zoom);
+  }
+
+  /** Screen position (canvas pixels) just above a tile's sign, for the HTML speech bubble. */
+  tileScreen(tile: number, centre = false) {
+    const cam = this.cameras?.main;
+    if (!cam) return null;
+    const p = tileXY(tile);
+    const top = centre ? p.y : p.y - (tile === CENTER_TILE ? 82 : 52);
+    const midX = this.scale.width / 2, midY = this.scale.height / 2;
+    const cx = cam.scrollX + midX, cy = cam.scrollY + midY; // world point shown at the canvas centre
+    return { x: midX + (p.x - cx) * cam.zoom, y: midY + (top - cy) * cam.zoom };
   }
 
   private dockPos(angle: number) {
@@ -422,6 +437,7 @@ class IslandScene extends Phaser.Scene {
     const tile = row * GRID + col;
     const pole = d.poles.findIndex(p => p.tile === tile);
     if (pole >= 0) return this.onPole(pole);
+    if (!d.poles.length && tile === CENTER_TILE) return this.onTile(tile); // the empty centre sign
     if (d.placing && isLand(d.seed, d.island, tile) && tile !== CENTER_TILE) this.onTile(tile);
   }
 
@@ -645,9 +661,19 @@ export class SeaMap {
   }
 
   update(d: MapData) { this.scene.setData(d); }
+  /** Where to draw the speech bubble for a tile, in page coordinates (null when not ashore). */
+  tileScreen(tile: number, centre = false) {
+    if (!this.inside) return null;
+    const p = this.islandScene.tileScreen(tile, centre);
+    const rect = this.game.canvas?.getBoundingClientRect();
+    return p && rect ? { x: rect.left + p.x, y: rect.top + p.y } : null;
+  }
   setInsets(top: number, right: number, bottom: number) {
+    const i = this.islandScene.insets;
+    const changed = i.top !== top || i.right !== right || i.bottom !== bottom;
     this.scene.insets = { top, right, bottom };
     this.islandScene.insets = { top, right, bottom };
+    if (changed && this.inside) this.islandScene.fit(); // the island keeps filling the visible area
   }
   focus(island: number) { this.scene.focus(island); }
 
@@ -674,8 +700,8 @@ export class SeaMap {
   }
   floatText(island: number, text: string) { this.scene.floatText(island, text); }
   zoomBy(f: number) {
-    const scene = this.inside ? this.islandScene : this.scene;
-    const cam = scene.cameras?.main;
+    if (this.inside) return; // the island view has a fixed size
+    const cam = this.scene.cameras?.main;
     if (cam) cam.zoomTo(Phaser.Math.Clamp(cam.zoom * f, MIN_ZOOM, MAX_ZOOM), 160, 'Sine.easeOut', true);
   }
   fitIsland() { this.islandScene.fit(); }

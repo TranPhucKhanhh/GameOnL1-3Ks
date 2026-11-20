@@ -299,3 +299,29 @@ button::after {
 
 .badge.theme-0 { background: #c8f5a8; } .badge.theme-1 { background: #a6e8b4; }
 .badge.theme-2 { background: #f0c8a8; } .badge.theme-3 { background: #ddd2ff; }
+
+/* ---------- speech bubble over a note pole (read a note, or write one on the sign) */
+.bubble {
+  position: fixed; z-index: 6; width: min(300px, calc(100vw - 24px)); transform: translateX(-50%);
+  background: #fffaf0; border: 3px solid var(--ink); border-radius: 20px; padding: 12px 14px 12px;
+  box-shadow: 0 6px 0 #00000033; pointer-events: auto; animation: bubble-pop .16s ease-out;
+}
+.bubble[hidden] { display: none; }
+.bubble::after {
+  content: ''; position: absolute; left: calc(50% + var(--tail, 0px) - 11px); bottom: -14px;
+  width: 18px; height: 18px; background: #fffaf0; border-right: 3px solid var(--ink); border-bottom: 3px solid var(--ink);
+  transform: rotate(45deg); border-bottom-right-radius: 4px;
+}
+.bubble.below::after { bottom: auto; top: -14px; transform: rotate(225deg); }
+.bubble .note-meta { padding-right: 28px; }
+.bubble-text { margin: 4px 0 0; font-size: 17px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+.bubble textarea { margin-top: 6px; min-height: 84px; font-size: 16px; }
+.bubble-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.bubble-row button { min-height: 46px; font-size: 17px; padding: 8px 14px; }
+#bubble-count { font-size: 13px; font-weight: 800; color: var(--ink-soft); }
+#bubble-count.over { color: var(--red-dark); }
+.bubble-x {
+  position: absolute; top: 6px; right: 6px; width: 32px; height: 32px; min-height: 0; padding: 0;
+  font-size: 20px; line-height: 1; border-radius: 10px; box-shadow: 0 2px 0 var(--ink);
+}
+@keyframes bubble-pop { from { transform: translateX(-50%) scale(.85); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
