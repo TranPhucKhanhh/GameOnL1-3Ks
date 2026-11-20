@@ -14,9 +14,9 @@ Canonical 5-role triage vocabulary (`needs-triage`, `needs-info`, `ready-for-age
 
 Single-context (`GLOSSARY.md` + `docs/adr/` at repo root). See `docs/agents/domain.md`.
 
-### Local toolchain
+### CI
 
-Foundry binaries live in `~/.foundry/bin` (prepend to `PATH` when `.tools/foundry` is absent). For CI failures, inspect `gh run view <id> --log-failed` before downloading `browser-results` artifacts.
+For CI failures, inspect `gh run view <id> --log-failed` before downloading `browser-results` artifacts.
 
 ### Testing
 
