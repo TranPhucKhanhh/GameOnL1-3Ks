@@ -13,11 +13,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Chromium and its system libraries come preinstalled (installing them took ~7 min per run).
-    # Keep the tag in step with @playwright/test in package.json.
-    container:
-      image: mcr.microsoft.com/playwright:v1.65.1-noble
-      options: --ipc=host
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -31,6 +26,13 @@ jobs:
         timeout-minutes: 5
       - run: npm run test:deploy
         timeout-minutes: 5
+      # ubuntu-latest already ships Chrome's system libraries, so skip --with-deps (its apt step took ~7 min).
+      # The Playwright container was tried instead and rendered the Phaser map ~3x slower.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npx playwright install chromium
       - run: npm run test:ui
         timeout-minutes: 20
       - uses: actions/upload-artifact@v7

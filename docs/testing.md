@@ -16,4 +16,4 @@ The CI workflow `.github/workflows/ci.yml` runs all of these on every push.
 
 See the [QA report and manual checklist](qa-issues-7-10-12-13.md) for issues #7, #10, #12 and #13.
 
-CI (`.github/workflows/ci.yml`) runs inside the `mcr.microsoft.com/playwright` image, so Chromium and its system libraries are preinstalled; keep the image tag equal to the `@playwright/test` version in `package.json`. Only `main` runs on push; pull requests run once per commit, and a newer commit cancels the older run.
+CI (`.github/workflows/ci.yml`) caches the Playwright Chromium download and skips `--with-deps`: the runner image already has Chrome's system libraries, and the apt step took about 7 minutes. (The Playwright Docker image rendered the map about 3x slower, so it is not used.) Only `main` runs on push; pull requests run once per commit, and a newer commit cancels the older run.
