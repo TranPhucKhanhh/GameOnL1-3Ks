@@ -79,7 +79,7 @@ svg { display: block; width: 100%; height: 100%; }
   border-radius: 28px 28px 0 0; box-shadow: 0 -6px 0 #00000022; -webkit-overflow-scrolling: touch;
 }
 .sheet.min { height: 26vh; }
-.grip { position: sticky; top: 0; float: right; z-index: 2; width: 52px; height: 40px; min-height: 0; padding: 0; margin: -4px -2px 6px 8px; font-size: 18px; border-radius: 14px; }
+.grip { position: sticky; top: 0; float: right; z-index: 2; width: 52px; height: 40px; min-height: 0; padding: 0; margin: -4px -2px 6px 8px; font-size: 18px; border-radius: 14px; touch-action: none; }
 .tabs {
   display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; padding: 8px 6px max(8px, env(safe-area-inset-bottom));
   background: linear-gradient(#8b5a2b, #6b4423); border-top: 4px solid var(--ink);
@@ -93,6 +93,7 @@ svg { display: block; width: 100%; height: 100%; }
 .tabs .ico { width: 34px; height: 34px; filter: drop-shadow(0 2px 0 #0003); }
 
 @media (min-width: 900px) {
+  .sea { right: 440px; }
   .ui { display: grid; grid-template-columns: 1fr 440px; grid-template-rows: auto auto 1fr auto; }
   .hud { grid-column: 1 / -1; }
   .demo-flag { grid-column: 1; justify-self: start; margin-left: 12px; align-self: start; }
@@ -229,23 +230,6 @@ summary { cursor: pointer; font-size: 15px; font-weight: 800; color: var(--blue-
 .tile.blank { background: transparent; border-color: transparent; box-shadow: none; }
 .tile:disabled { opacity: 1; filter: none; cursor: default; }
 
-/* ---------- phone tweaks */
-@media (max-width: 480px) {
-  .hud { gap: 6px; padding-left: 8px; padding-right: 8px; }
-  .brand-text { display: none; }
-  .brand-mark { width: 42px; height: 42px; }
-  .meter { height: 38px; font-size: 17px; padding-right: 9px; }
-  .meter small { display: none; }
-  .mi { width: 26px; height: 26px; margin-left: -8px; }
-  .lantern { width: 15px; height: 21px; }
-  .chip { font-size: 0; width: 40px; padding: 0; justify-content: center; }
-  .chip .dot { width: 14px; height: 14px; }
-  .demo-flag { font-size: 10px; padding: 5px 10px; }
-  .tabs button { font-size: 11px; min-height: 66px; }
-  .tabs .ico { width: 30px; height: 30px; }
-  .statgrid { grid-template-columns: repeat(2, 1fr); }
-}
-
 /* inline cartoon coin inside buttons and text */
 .ci { display: inline-block; width: 1.15em; height: 1.15em; vertical-align: -0.22em; margin-right: 3px; }
 
@@ -259,6 +243,38 @@ summary { cursor: pointer; font-size: 15px; font-weight: 800; color: var(--blue-
 @media (max-width: 899px) { .mapctl { top: auto; bottom: calc(48vh + 96px); } .sheet.min ~ .mapctl { bottom: calc(26vh + 96px); } }
 @media (min-width: 900px) { .backsea { top: 112px; } .mapctl { top: 176px; } }
 @media (max-width: 899px) { .backsea { top: 112px; } }
+
+/* ---------- phone tweaks */
+@media (max-width: 480px) {
+  .hud { gap: 5px; padding: 6px 8px; padding-top: max(6px, env(safe-area-inset-top)); }
+  .brand-text { display: none; }
+  .brand-mark { width: 34px; height: 34px; padding: 3px; }
+  .meter { height: 32px; font-size: 15px; padding: 0 8px 0 5px; }
+  .meter small { display: none; }
+  .mi { width: 22px; height: 22px; margin-left: -6px; }
+  .lantern { width: 13px; height: 18px; }
+  .chip { min-height: 32px; height: 32px; font-size: 0; width: 38px; padding: 0; justify-content: center; }
+  .chip.primary { width: auto; padding: 0 10px; font-size: 13px; }
+  .chip .dot { width: 12px; height: 12px; }
+  .demo-flag { font-size: 10px; padding: 4px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sheet { padding: 10px 10px 8px; border-radius: 22px 22px 0 0; }
+  .grip { width: 44px; height: 44px; min-height: 0; padding: 0; font-size: 16px; border-radius: 12px; }
+  .tabs { padding: 4px 6px max(4px, env(safe-area-inset-bottom)); }
+  .tabs button { font-size: 10px; min-height: 48px; padding: 3px 0 4px; border-radius: 13px; }
+  .tabs .ico { width: 24px; height: 24px; }
+  .card { padding: 12px; }
+  .card h2 { font-size: 23px; }
+  .card p { font-size: 15px; }
+  button { min-height: 44px; padding: 8px 14px; font-size: 16px; border-radius: 15px; }
+  button.wide { min-height: 46px; font-size: 18px; }
+  .list li > button, .shop li > button, .gems li > button { min-height: 44px; font-size: 15px; }
+  .tile { min-height: 0; padding: 0; font-size: clamp(22px, 7vw, 32px); }
+  .mapctl button { width: 44px; height: 44px; min-height: 0; padding: 0; font-size: 22px; border-radius: 14px; }
+  .mapctl { bottom: calc(48vh + 70px + env(safe-area-inset-bottom)); }
+  .sheet.min ~ .mapctl { bottom: calc(26vh + 70px + env(safe-area-inset-bottom)); }
+  .backsea { top: 82px; min-height: 44px; font-size: 15px; padding: 6px 12px; }
+  .statgrid { grid-template-columns: repeat(2, 1fr); }
+}
 .notes li { cursor: pointer; }
 .notes li.sel { border: 3px solid var(--gold-dark); background: #fff3c4; box-shadow: 0 3px 0 var(--gold-dark); }
 .lane.focus { border-color: var(--gold-dark); box-shadow: 0 0 0 4px var(--gold), 0 4px 0 #00000022; }

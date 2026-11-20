@@ -19,8 +19,8 @@ test('three captains fund, attack and settle a raid and view the desktop cabinet
     }
 
     // Headroom for the sequence even if the suite starts at the end of an epoch.
-    const epoch = await game.readContract({ address: cfg.raid, abi: raidAbi, functionName: 'bossEpoch' });
-    const { timestamp } = await game.getBlock();
+    const epoch = /** @type {bigint} */ (await game.readContract({ address: cfg.raid, abi: raidAbi, functionName: 'bossEpoch' }));
+    const timestamp = /** @type {bigint} */ ((await game.getBlock()).timestamp);
     let endsAt = (timestamp / epoch + 1n) * epoch;
     if (endsAt - timestamp < 120n) {
       await advanceTo(endsAt + 1n);

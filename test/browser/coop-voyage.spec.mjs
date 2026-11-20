@@ -24,7 +24,8 @@ test('co-op voyage: two captains pool charges, solve sliding puzzles and land to
     await startVoyage(A, B);
 
     const id = await game.readContract({ address: cfg.coop, abi: coopAbi, functionName: 'voyageCount' });
-    const startedAt = (await game.readContract({ address: cfg.coop, abi: coopAbi, functionName: 'voyages', args: [id] }))[8];
+    const voyage = /** @type {any} */ (await game.readContract({ address: cfg.coop, abi: coopAbi, functionName: 'voyages', args: [id] }));
+    const startedAt = voyage[8];
     expect(startedAt > 0n).toBe(true);
     const depth = Number(await game.readContract({ address: cfg.coop, abi: coopAbi, functionName: 'scrambleDepth' }));
 

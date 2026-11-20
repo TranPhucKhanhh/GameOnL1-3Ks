@@ -20,7 +20,7 @@
     "test:ui": "playwright test",
     "config:testnet": "node scripts/config-testnet.mjs",
     "dev": "vite web --host 127.0.0.1",
-    "build": "tsc --noEmit && vite build web",
+    "build": "tsc --noEmit && tsc -p test/browser/tsconfig.json && vite build web",
     "preview": "vite preview web --host 127.0.0.1",
     "lint": "node scripts/lint.mjs",
     "check": "npm run lint && npm run test:contracts && npm run abi && npm run build"

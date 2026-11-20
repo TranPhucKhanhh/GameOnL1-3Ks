@@ -8,7 +8,7 @@
 | `npm run check` | Repository lint, contract tests, ABI sync, TypeScript check and the production build. |
 | `npm run test:e2e` | Two Anvil chains plus the mock relayer. Checks browser geometry against the contract, solo and co-op voyages, a Parley signature and a raid round trip with both funders, the combined cap, a helper attack, previous-epoch settlement and both refunds claimed. |
 | `npm run test:deploy` | Runs the real Forge `DeployGame` / `DeployEscrow` / `Bind*` scripts on disposable chains with IDs 202611 and 43113, and checks the wiring. |
-| `npm run test:ui` | Playwright covers Parley paste and synthetic-camera scanning, co-op puzzles and timeout, note bubbles, sailing, sea zoom, ship gear and a three-captain raid with funding, attacks, previous-epoch settlement and Claim. Desktop and phone-sized tests exercise map hover, click and tap. Screenshots go to `test-results/`. |
+| `npm run test:ui` | Playwright on phone (`360×740`, `390×844`) and desktop (`1280×800`) viewports: mobile HUD/tab/button sizing, single-line demo banner and collapsible bottom sheet, Parley paste and synthetic-camera scanning, co-op puzzles and timeout, note bubbles, sailing, sea zoom, ship gear, map hover/click/tap targets, and a three-captain raid with funding, attacks, previous-epoch settlement and Claim. It also checks the read-only cabinet link on desktop and fails on any page error. Screenshots go to `test-results/`. |
 
 `test:e2e`, `test:deploy` and `test:ui` each start their own chains on ports 8545 and 9545 (and 5173 for the UI test). Stop `npm run local` before running them.
 

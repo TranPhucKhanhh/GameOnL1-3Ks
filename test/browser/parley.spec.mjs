@@ -31,7 +31,7 @@ test('parley: two captains exchange a code without modal DOM detachment', async 
     await B.page.locator('#sheet button', { hasText: /^Parley$/ }).click();
     await expect(B.page.locator('#sheet')).toContainText('Active Parleys', { timeout: 20_000 });
     for (const [viewer, partner] of [[A, B], [B, A]]) {
-      const { home } = await game.readContract({ address: cfg.sea, abi: seaAbi, functionName: 'captainView', args: [partner.address] });
+      const { home } = /** @type {any} */ (await game.readContract({ address: cfg.sea, abi: seaAbi, functionName: 'captainView', args: [partner.address] }));
       await expect.poll(() => viewer.page.evaluate(id => window.__lantern.map.scene.data_.partnerVisited.has(id), Number(home))).toBe(true);
     }
 
@@ -45,7 +45,7 @@ test('parley: two captains exchange a code without modal DOM detachment', async 
         canvas.width = qr.width;
         canvas.height = qr.height;
         const stream = canvas.captureStream();
-        canvas.getContext('2d').drawImage(qr, 0, 0);
+        canvas.getContext('2d')?.drawImage(qr, 0, 0);
         return stream;
       };
     }, qrImage);

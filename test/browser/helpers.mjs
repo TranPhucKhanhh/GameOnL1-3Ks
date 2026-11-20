@@ -20,6 +20,7 @@ export function loadAbi(name) {
   return JSON.parse(readFileSync(`web/src/generated/${name}.json`, 'utf8'));
 }
 
+/** Anvil test client; untyped so tests can send anvil_/evm_ methods. @returns {any} */
 export function gameClient(cfg) {
   return createPublicClient({ transport: http(cfg.game.rpcUrl) });
 }
@@ -37,7 +38,7 @@ export async function giveCoins(cfg, captainAddress, coins) {
   await call('anvil_setBalance', [cfg.raid, '0x56BC75E2D63100000']);
   const wallet = createWalletClient({ account: cfg.raid, transport: http(rpc) });
   const hash = await wallet.writeContract({ address: cfg.sea, abi: loadAbi('LanternSea'), functionName: 'addCoins',
-    args: [captainAddress, BigInt(coins)], chain: null });
+    args: [captainAddress, BigInt(coins)], account: cfg.raid, chain: null });
   await gameClient(cfg).waitForTransactionReceipt({ hash, pollingInterval: 100 });
   await call('anvil_stopImpersonatingAccount', [cfg.raid]);
 }
@@ -53,8 +54,8 @@ export async function findCaptainKey(cfg, prefix, predicate) {
   }
 }
 
-export async function captain(browser, key) {
-  const context = await browser.newContext({ viewport: PHONE, deviceScaleFactor: DPR, hasTouch: true });
+export async function captain(browser, key, contextOptions = { viewport: PHONE, deviceScaleFactor: DPR, hasTouch: true }) {
+  const context = await browser.newContext(contextOptions);
   await context.addInitScript(k => sessionStorage.setItem('lantern-guest-key', k), key);
   const page = await context.newPage();
   const errors = [];
@@ -71,8 +72,8 @@ export async function registerCaptain(captainHandle) {
 }
 
 /** Launch, register, run `fn`, assert zero page errors, and close all contexts. */
-export async function withCaptains(browser, keys, fn) {
-  const handles = await Promise.all(keys.map(key => captain(browser, key)));
+export async function withCaptains(browser, keys, fn, contextOptions) {
+  const handles = await Promise.all(keys.map(key => captain(browser, key, contextOptions)));
   try {
     for (const handle of handles) await registerCaptain(handle);
     await fn(handles);
