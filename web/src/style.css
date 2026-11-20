@@ -35,7 +35,8 @@ svg { display: block; width: 100%; height: 100%; }
 .boot, .setup { color: #fff; padding: 24px; font-family: var(--title); font-size: 22px; }
 .setup pre { background: #00000040; padding: 12px; border-radius: 12px; font-size: 14px; font-family: ui-monospace, monospace; }
 
-.sea { position: fixed; inset: 0; touch-action: none; }
+.sea, .sea canvas { touch-action: none; }
+.sea { position: fixed; inset: 0; }
 .sea canvas { display: block; }
 .ui { position: fixed; inset: 0; pointer-events: none; display: flex; flex-direction: column; }
 .ui > * { pointer-events: auto; }
@@ -253,7 +254,7 @@ summary { cursor: pointer; font-size: 15px; font-weight: 800; color: var(--blue-
 
 /* ---------- map controls (zoom, back to sea) */
 .mapctl { position: fixed; z-index: 3; display: flex; flex-direction: column; gap: 8px; left: 12px; top: 120px; pointer-events: auto; }
-.mapctl button { width: 52px; height: 52px; min-height: 0; padding: 0; font-size: 26px; border-radius: 16px; }
+.mapctl button { width: 52px; height: 52px; min-height: 0; padding: 0; font-size: 26px; border-radius: 16px; touch-action: manipulation; }
 .backsea { position: fixed; z-index: 3; left: 12px; top: 116px; pointer-events: auto; min-height: 48px; font-size: 17px; padding: 8px 16px; }
 @media (max-width: 899px) { .mapctl { top: auto; bottom: calc(48vh + 96px); } .sheet.min ~ .mapctl { bottom: calc(26vh + 96px); } }
 @media (min-width: 900px) { .backsea { top: 112px; } .mapctl { top: 176px; } }
