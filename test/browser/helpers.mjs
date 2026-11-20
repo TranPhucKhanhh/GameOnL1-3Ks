@@ -37,7 +37,7 @@ export async function giveCoins(cfg, captainAddress, coins) {
   await call('anvil_setBalance', [cfg.raid, '0x56BC75E2D63100000']);
   const wallet = createWalletClient({ account: cfg.raid, transport: http(rpc) });
   const hash = await wallet.writeContract({ address: cfg.sea, abi: loadAbi('LanternSea'), functionName: 'addCoins',
-    args: [captainAddress, BigInt(coins)], chain: null });
+    args: [captainAddress, BigInt(coins)], account: cfg.raid, chain: null });
   await gameClient(cfg).waitForTransactionReceipt({ hash, pollingInterval: 100 });
   await call('anvil_stopImpersonatingAccount', [cfg.raid]);
 }

@@ -87,7 +87,8 @@ let overlay: 'none' | 'qr' | 'scan' = 'none';
 let qr: { url: string; code: string; expiry: number } | null = null;
 let busy = '', notice = '', noticeError = false, clearForms = false;
 let coopForm: { dir: number } | null = null;
-let sheetMin = false;
+let sheetMin = matchMedia('(max-width: 899px)').matches;
+let suppressGripClick = false;
 let renderedTab: Tab | null = null;
 let renderedInside: boolean | null = null;
 let renderedHud = '', renderedSheet = '', renderedOverlayKey = '', clearFormsApplied = false;
@@ -764,7 +765,11 @@ function renderOverlay() {
 }
 
 function bind(root: Element) {
-  root.querySelectorAll<HTMLElement>('[data-tab]').forEach(el => el.addEventListener('click', () => { tab = el.dataset.tab as Tab; render(); }));
+  root.querySelectorAll<HTMLElement>('[data-tab]').forEach(el => el.addEventListener('click', () => {
+    tab = el.dataset.tab as Tab;
+    sheetMin = false;
+    render();
+  }));
   root.querySelectorAll<HTMLElement>('[data-copy]').forEach(el => el.addEventListener('click', () => {
     void navigator.clipboard?.writeText(el.dataset.copy!).then(() => { notice = 'Copied.'; noticeError = false; render(); });
   }));
@@ -787,7 +792,9 @@ function onAction(el: HTMLElement) {
   const g = config.game, c = config.vault;
   switch (a) {
     case 'connect': tab = 'island'; sheetMin = false; render(); return;
-    case 'grip': sheetMin = !sheetMin; render(); return;
+    case 'grip':
+      if (suppressGripClick) { suppressGripClick = false; return; }
+      sheetMin = !sheetMin; render(); return;
     case 'guest': return void act('Preparing guest captain', () => connect('guest'));
     case 'injected': return void act('Connecting wallet', () => connect('injected'));
     case 'disconnect': signer = null; me = null; visited = []; selected = null; render(); return;
@@ -946,6 +953,38 @@ async function startScan() {
 
 // ------------------------------------------------------------------ boot
 
+const GRIP_DRAG_PX = 18;
+
+/** Drag the sheet grip vertically to expand or collapse on touch/pointer devices. */
+function bindGripDrag() {
+  let gripDrag: { id: number; startY: number; moved: boolean } | null = null;
+  document.addEventListener('pointerdown', e => {
+    const target = (e.target as HTMLElement | null)?.closest?.('.grip');
+    if (!target || e.button > 0) return;
+    suppressGripClick = false;
+    gripDrag = { id: e.pointerId, startY: e.clientY, moved: false };
+  });
+  document.addEventListener('pointermove', e => {
+    if (!gripDrag || e.pointerId !== gripDrag.id) return;
+    if (Math.abs(e.clientY - gripDrag.startY) >= GRIP_DRAG_PX) gripDrag.moved = true;
+  });
+  const endGripDrag = (e: PointerEvent, commit: boolean) => {
+    if (!gripDrag || e.pointerId !== gripDrag.id) return;
+    const { startY, moved } = gripDrag;
+    gripDrag = null;
+    if (!moved) return;
+    suppressGripClick = true;
+    setTimeout(() => { suppressGripClick = false; }, 0);
+    if (!commit) return;
+    const dy = e.clientY - startY;
+    if (dy <= -GRIP_DRAG_PX) sheetMin = false;
+    else if (dy >= GRIP_DRAG_PX) sheetMin = true;
+    render();
+  };
+  document.addEventListener('pointerup', e => endGripDrag(e, true));
+  document.addEventListener('pointercancel', e => endGripDrag(e, false));
+}
+
 async function boot() {
   const response = await fetch('./config.json', { cache: 'no-store' });
   if (!response.ok) throw new Error('No config yet. Run `npm run local`, or `npm run config:testnet` (see README).');
@@ -960,6 +999,7 @@ async function boot() {
   const view = new URLSearchParams(location.search).get('captain');
   if (view && isAddress(view)) { viewAs = view; tab = 'cabinet'; }
   app.innerHTML = '<div id="sea" class="sea" aria-label="Sea map"></div><div id="ui" class="ui"></div><div id="bubble" class="bubble" role="dialog" hidden></div>';
+  bindGripDrag();
   // A tap or click anywhere outside the bubble closes it (the draft is kept); Escape too.
   document.addEventListener('pointerdown', e => {
     if (bubble && !document.querySelector('#bubble')?.contains(e.target as Node)) closeBubble();

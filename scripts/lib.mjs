@@ -1,11 +1,15 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { createPublicClient, createWalletClient, defineChain, http } from 'viem';
 
 export function tool(name) {
-  const local = resolve('.tools/foundry', `${name}${process.platform === 'win32' ? '.exe' : ''}`);
-  return existsSync(local) ? local : name;
+  const bin = `${name}${process.platform === 'win32' ? '.exe' : ''}`;
+  const local = resolve('.tools/foundry', bin);
+  if (existsSync(local)) return local;
+  const homeBin = join(homedir(), '.foundry', 'bin', bin);
+  return existsSync(homeBin) ? homeBin : name;
 }
 export function run(name, args, options = {}) {
   const result = spawnSync(tool(name), args, { stdio: 'inherit', ...options });
