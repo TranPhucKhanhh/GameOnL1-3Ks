@@ -32,7 +32,10 @@ export function pub(n: Network): PublicClient {
   let p = publics.get(n.chainId);
   if (!p) {
     // JSON-RPC batching folds the many small reads per refresh into one HTTP request.
-    p = createPublicClient({ chain: chainOf(n), transport: http(rpcUrl(n), { batch: { wait: 16 } }) }) as PublicClient;
+    // Check for receipts quickly: viem's default is every 4 s. The local chain (proxied, relative URL) mines
+    // instantly; a real L1 makes a block every second or two.
+    const pollingInterval = n.rpcUrl.startsWith('/') ? 250 : 1000;
+    p = createPublicClient({ chain: chainOf(n), transport: http(rpcUrl(n), { batch: { wait: 16 } }), pollingInterval }) as PublicClient;
     publics.set(n.chainId, p);
   }
   return p;

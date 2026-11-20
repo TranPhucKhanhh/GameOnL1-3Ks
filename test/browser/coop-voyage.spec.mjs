@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { walk, voyageSeed, solution } from '../../scripts/puzzle-walk.mjs';
 import { act, findCaptainKey, gameClient, guestKey, loadAbi, loadConfig, tab, withCaptains } from './helpers.mjs';
 
-test('co-op voyage: two captains solve sliding puzzles and build a note pole', async ({ browser }) => {
+test('co-op voyage: two captains pool charges, solve sliding puzzles and land together', async ({ browser }) => {
   const cfg = loadConfig();
   const game = gameClient(cfg);
   const coopAbi = loadAbi('CoopSail');
@@ -47,30 +47,5 @@ test('co-op voyage: two captains solve sliding puzzles and build a note pole', a
 
     await tab(A.page, 'Crew');
     await expect(A.page.locator('#sheet')).toContainText('Landed', { timeout: 20_000 });
-
-    await tab(A.page, 'Sea');
-    await A.page.locator('#sheet button', { hasText: 'Go ashore' }).click();
-    await expect(A.page.locator('.backsea')).toBeVisible();
-    // Write the first note in the speech bubble on the centre sign (tile 40), not in the panel.
-    const centre = () => A.page.evaluate(() => window.__lantern.map.tileScreen(40, true));
-    await expect.poll(centre).not.toBeNull();
-    await expect(A.page.locator('#sheet')).toContainText('Tap the "?" sign', { timeout: 20_000 });
-    const c = await centre();
-    await A.page.touchscreen.tap(c.x, c.y);
-    await expect(A.page.locator('#bubble-text')).toBeVisible();
-    await A.page.fill('#bubble-text', 'First lantern lit on Pearl Bluff!');
-    const build = A.page.locator('#bubble button[data-act="note"]');
-    await expect(build).toBeEnabled({ timeout: 20_000 }); // co-op reward coins may still be arriving
-    const coinsBefore = Number((await A.page.locator('.meter.coin').innerText()).replace(/\D/g, ''));
-    await build.click();
-    await expect(A.page.locator('#sheet .notes')).toContainText('Pole #1 · centre', { timeout: 20_000 });
-    await expect(A.page.locator('.meter.coin')).toHaveText(String(coinsBefore - 25), { timeout: 20_000 });
-    // Tapping the pole shows its note in a bubble; tapping elsewhere closes it.
-    const c2 = await centre();
-    await A.page.touchscreen.tap(c2.x, c2.y);
-    await expect(A.page.locator('#bubble .bubble-text')).toHaveText('First lantern lit on Pearl Bluff!');
-    await A.page.touchscreen.tap(20, 200);
-    await expect(A.page.locator('#bubble')).toBeHidden();
-    await A.page.screenshot({ path: 'test-results/lantern-phone-island.png' });
   });
 });

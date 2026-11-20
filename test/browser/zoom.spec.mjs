@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { existsSync } from 'node:fs';
-import { keccak256, toHex } from 'viem';
+import { DPR, guestKey } from './helpers.mjs';
 
 const macChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 if (!process.env.CI && process.platform === 'darwin' && existsSync(macChrome)) {
@@ -10,8 +10,8 @@ if (!process.env.CI && process.platform === 'darwin' && existsSync(macChrome)) {
 const PHONE = { width: 390, height: 844 };
 
 async function openPhoneCaptain(browser, label) {
-  const context = await browser.newContext({ viewport: PHONE, deviceScaleFactor: 2, hasTouch: true });
-  await context.addInitScript(guestKey => sessionStorage.setItem('lantern-guest-key', guestKey), keccak256(toHex(label)));
+  const context = await browser.newContext({ viewport: PHONE, deviceScaleFactor: DPR, hasTouch: true });
+  await context.addInitScript(key => sessionStorage.setItem('lantern-guest-key', key), guestKey(label));
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', pageError => errors.push(pageError.message));

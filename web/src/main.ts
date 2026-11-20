@@ -987,7 +987,8 @@ async function boot() {
   }
   window.ethereum?.on?.('accountsChanged', () => { if (signer?.kind === 'injected') { signer = null; me = null; visited = []; render(); } });
   render(); await refresh(); render();
-  setInterval(() => { void refresh().then(render); }, 3000);
+  // Re-read the chain every second on the local demo (instant blocks), every 3 s on public networks.
+  setInterval(() => { void refresh().then(render); }, config.mode === 'local' ? 1000 : 3000);
   setInterval(() => {
     if (puzzle) {
       const t = puzzle.deadline - now();
