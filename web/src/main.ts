@@ -109,6 +109,10 @@ function left(seconds: number) {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
   return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
 }
+/** A live countdown: its text is updated in place every second, so ticking time never rebuilds a panel. */
+const tick = (until: number) => `<span data-until="${until}">${left(until - now())}</span>`;
+const withoutTicks = (html: string) => html.replace(/(<span data-until="\d+">)[^<]*(<\/span>)/g, '$1$2');
+
 const FRIENDLY: [RegExp, string][] = [
   [/NotEnoughCharges/, 'Not enough sailing charges. Wait for your lanterns to refill.'],
   [/CoopRequired/, 'This lane needs a crew: plan a co-op voyage.'],
@@ -539,14 +543,14 @@ function crewPanel() {
     if (v.status === 2 && deadline > now() && solvedMe === 0n) actions = `<button class="primary" data-act="open-puzzle" data-id="${v.id}">Open puzzle</button>`;
     if (v.status === 2 && deadline <= now()) actions = `<button data-act="expire" data-id="${v.id}">Mark lost</button>`;
     return `<li><span><b>${esc(islandName(v.from))} → ${v.status === 3 ? esc(islandName(v.to)) : 'unknown waters'}</b>
-      <small>with ${short(other)} · ⚓${v.cost} · ${VOYAGE_STATUS[v.status]}${v.status === 2 ? ` · you ${solvedMe ? '✓' : '…'} / them ${solvedThem ? '✓' : '…'} · ${left(deadline - now())}` : ''}${v.status === 3 ? (v.fresh ? ' · claimed!' : ' · already claimed') : ''}</small></span>${actions}</li>`;
+      <small>with ${short(other)} · ⚓${v.cost} · ${VOYAGE_STATUS[v.status]}${v.status === 2 ? ` · you ${solvedMe ? '✓' : '…'} / them ${solvedThem ? '✓' : '…'} · ${tick(deadline)}` : ''}${v.status === 3 ? (v.fresh ? ' · claimed!' : ' · already claimed') : ''}</small></span>${actions}</li>`;
   }).join('');
   return `<div class="card">
     <h2>Parley</h2>
     <p>Meet another captain in person. One shows a code, the other scans it. For ${demo ? '10 minutes' : 'an hour'} your maps are shared and you can jump to any of their islands for ⚓1.</p>
     <div class="row"><button class="primary" data-act="show-qr">Show my code</button><button data-act="scan">Scan a code</button></div>
     <details><summary>No camera? Paste a code</summary><div class="note-form"><input id="paste" placeholder="lantern:parley:…"><button data-act="paste">Parley</button></div></details>
-    ${active.length ? `<h3>Active Parleys</h3><ul class="list">${active.map(p => `<li><span><b>${short(p.who)}</b><small>${left(p.until - now())} left</small></span>
+    ${active.length ? `<h3>Active Parleys</h3><ul class="list">${active.map(p => `<li><span><b>${short(p.who)}</b><small>${tick(p.until)} left</small></span>
       <button data-act="share" data-who="${p.who}" ${same(sharedWith, p.who) ? 'disabled' : ''}>${same(sharedWith, p.who) ? 'Map shared' : 'Show their map'}</button></li>`).join('')}</ul>` : ''}
     <h3>Crew voyages</h3>
     ${voyages.length ? `<ul class="list">${vRows}</ul>` : '<p class="muted">Plan one from a ⚓4–5 crew lane on an island.</p>'}
@@ -582,7 +586,7 @@ function raidPanel() {
   return `<div class="card raid">
     <div class="island-head"><h2>☠ ${BOSSES[tier]}</h2><span class="muted">${boss.island !== null ? esc(islandName(boss.island)) : ''}</span></div>
     <div class="hp" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span><b>${hp} / ${boss.maxHp} HP</b></div>
-    <p class="muted">${RAID_STATUS[r.status]}${r.settled ? ' · settled' : ''} · leaves in ${left(timeLeft)} · boss coins for the lead crew: ${COIN}${boss.coins}</p>
+    <p class="muted">${RAID_STATUS[r.status]}${r.settled ? ' · settled' : ''} · leaves in ${tick(Number(boss.endsAt))} · boss coins for the lead crew: ${COIN}${boss.coins}</p>
     ${r.status >= 1 ? `<p>Lead crew: <b>${name(r.leadA)}</b> + <b>${name(r.leadB)}</b> · bounty <b>${usd(r.bounty)} USDC</b> (escrowed on C-Chain)</p>` : ''}
     ${actions}
     ${helpers.length ? `<h3>Damage</h3><ul class="list">${helpers.map(h => `<li><span><b>${name(h.who)}</b><small>helper · ${r.totalDamage > 0n ? Number((h.dmg * 1000n) / r.totalDamage) / 10 : 0}% of damage</small></span><b>${h.dmg}</b></li>`).join('')}</ul>` : ''}
@@ -679,7 +683,7 @@ function render() {
   const hudHtml = hud();
   const panel = tab === 'island' ? islandPanel() : tab === 'ship' ? shipPanel() : tab === 'crew' ? crewPanel()
     : tab === 'raid' ? raidPanel() : tab === 'cabinet' ? cabinetPanel() : helpPanel();
-  const sheetHtml = panel + (busy || notice) + String(noticeError) + String(sheetMin);
+  const sheetHtml = withoutTicks(panel) + (busy || notice) + String(noticeError) + String(sheetMin);
   const inIsland = inside !== null;
   const nextOverlayKey = overlayStateKey();
   const sheetUnchanged = !clearForms && !!document.querySelector('#sheet') && sheetHtml === renderedSheet
@@ -990,6 +994,7 @@ async function boot() {
   // Re-read the chain every second on the local demo (instant blocks), every 3 s on public networks.
   setInterval(() => { void refresh().then(render); }, config.mode === 'local' ? 1000 : 3000);
   setInterval(() => {
+    document.querySelectorAll<HTMLElement>('#sheet [data-until]').forEach(el => { el.textContent = left(Number(el.dataset.until) - now()); });
     if (puzzle) {
       const t = puzzle.deadline - now();
       const el = document.querySelector('.timer');
