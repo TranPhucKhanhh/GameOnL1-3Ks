@@ -16,6 +16,8 @@ export type MapData = {
 };
 
 const CELL = 120;
+const MIN_ZOOM = 0.35;
+const MAX_ZOOM = 2.4;
 const FONT = '"Lilita One", "Arial Rounded MT Bold", Arial, sans-serif';
 const label = (size: number, extra: Phaser.Types.GameObjects.Text.TextStyle = {}): Phaser.Types.GameObjects.Text.TextStyle =>
   ({ fontFamily: FONT, fontSize: `${size}px`, color: '#ffffff', stroke: '#3b2414', strokeThickness: Math.max(3, size / 4), resolution: 2, ...extra });
@@ -29,7 +31,7 @@ export function islandPos(island: number, mapSize: number) {
 }
 
 /** Drag to pan, wheel or pinch to zoom, tap to select. Shared by the sea map and the island view. */
-function panZoom(scene: Phaser.Scene, onTap: (wx: number, wy: number) => void, minZoom = 0.35, maxZoom = 2.4) {
+function panZoom(scene: Phaser.Scene, onTap: (wx: number, wy: number) => void, minZoom = MIN_ZOOM, maxZoom = MAX_ZOOM) {
   let drag: { x: number; y: number; sx: number; sy: number } | null = null;
   let pinch: { dist: number; zoom: number } | null = null;
   let moved = false;
@@ -674,7 +676,7 @@ export class SeaMap {
   zoomBy(f: number) {
     const scene = this.inside ? this.islandScene : this.scene;
     const cam = scene.cameras?.main;
-    if (cam) cam.zoomTo(Phaser.Math.Clamp(cam.zoom * f, 0.35, 2.4), 160, 'Sine.easeOut', true);
+    if (cam) cam.zoomTo(Phaser.Math.Clamp(cam.zoom * f, MIN_ZOOM, MAX_ZOOM), 160, 'Sine.easeOut', true);
   }
   fitIsland() { this.islandScene.fit(); }
 }
