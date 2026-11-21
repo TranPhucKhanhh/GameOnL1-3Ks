@@ -1,7 +1,7 @@
 interface Window {
   __lantern: {
     map: {
-      game: { scene: { getScene(key: string): any } };
+      game: { scene: { getScene(key: string): any }; canvas: HTMLCanvasElement; scale: { width: number; height: number } };
       scene: any;
       tileScreen(tile: number, center: boolean): { x: number; y: number } | null;
     };

@@ -42,6 +42,25 @@ async function pinch(cdp, centerX, centerY, startHalfDist, endHalfDist, steps = 
   await send('touchEnd', endHalfDist);
 }
 
+async function drag(cdp, x, y, dx, dy, steps = 6) {
+  const at = i => [{ x: Math.round(x + (dx * i) / steps), y: Math.round(y + (dy * i) / steps), id: 1 }];
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(0) });
+  for (let i = 1; i <= steps; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at(i) });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+}
+
+const getScroll = page => page.evaluate(() => {
+  const cam = window.__lantern.map.game.scene.getScene('sea').cameras.main;
+  return { x: cam.scrollX, y: cam.scrollY };
+});
+
+/** One-finger drag must move the sea camera (in world units: screen delta / zoom). */
+async function expectDragPans(page, cdp, x, y) {
+  const before = await getScroll(page);
+  await drag(cdp, x, y, -120, -60);
+  await expect.poll(async () => (await getScroll(page)).x - before.x).toBeGreaterThan(40);
+}
+
 test('mobile: pinch-to-zoom and +/- buttons zoom the sea map, the island keeps a fixed size, the page never zooms', async ({ browser }) => {
   test.setTimeout(120_000);
   const { context, page, errors } = await openPhoneCaptain(browser, 'lantern-zoom-test-1');
@@ -59,6 +78,9 @@ test('mobile: pinch-to-zoom and +/- buttons zoom the sea map, the island keeps a
     const centerX = canvasBox.x + canvasBox.width / 2;
     const centerY = canvasBox.y + 180; // upper half above the bottom sheet
 
+    // One-finger drag pans the sea, before and (below) after a pinch.
+    await expectDragPans(page, cdp, centerX, centerY);
+
     const zoomBefore = await getSceneZoom(page, 'sea');
     await pinch(cdp, centerX, centerY, 30, 110);
     await expect.poll(() => getSceneZoom(page, 'sea')).toBeGreaterThan(zoomBefore * 1.15);
@@ -69,6 +91,8 @@ test('mobile: pinch-to-zoom and +/- buttons zoom the sea map, the island keeps a
     // 3. Pinch in on the sea map should zoom out
     await pinch(cdp, centerX, centerY, 110, 30);
     await expect.poll(() => getSceneZoom(page, 'sea')).toBeLessThan(zoomAfterPinchOut * 0.85);
+
+    await expectDragPans(page, cdp, centerX, centerY);
 
     // 4. Tap + and - buttons on phone (sea view)
     const zoomBeforeBtn = await getSceneZoom(page, 'sea');

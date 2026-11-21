@@ -18,9 +18,18 @@ test('note pole: write the first note in the centre sign bubble, read it back, c
       const { map } = window.__lantern;
       const position = map.tileScreen(40, true);
       if (!position) return null;
-      return { ...position, zoom: map.game.scene.getScene('island').cameras.main.zoom };
+      // CSS pixels per world unit: the camera zoom also carries the canvas pixel density.
+      const cssPerCanvasPx = map.game.canvas.getBoundingClientRect().width / map.game.scale.width;
+      return { ...position, zoom: map.game.scene.getScene('island').cameras.main.zoom * cssPerCanvasPx };
     });
-    await expect.poll(centre).not.toBeNull();
+    // Wait until the island has finished fitting around the panel: two consecutive poll reads agree.
+    let last = null;
+    await expect.poll(async () => {
+      const now = await centre();
+      const settled = !!now && !!last && Math.abs(now.x - last.x) + Math.abs(now.y - last.y) < 1;
+      last = now;
+      return settled;
+    }, { intervals: [250] }).toBe(true);
     const c = await centre();
     await A.page.touchscreen.tap(c.x + 17 * c.zoom, c.y + 12 * c.zoom);
     await expect(A.page.locator('#bubble')).toBeHidden();
