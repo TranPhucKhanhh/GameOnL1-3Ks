@@ -94,6 +94,8 @@ npm run build
 
 ## 5. Host it over HTTPS
 
+This repo publishes to GitHub Pages automatically (`.github/workflows/pages.yml`) on every push to `main`: https://tranphuckhanhh.github.io/GameOnL1-3Ks/. It builds with `web/deploy/config.testnet.json`, so after a redeploy run `npm run config:testnet` and copy `web/public/config.json` over that file. The steps below are for hosting elsewhere.
+
 Upload `web/dist/` to Cloudflare Pages (or Vercel or Netlify) as a static site. Phones need HTTPS for the camera, and judges need one link that works. Re-upload after each redeploy, because `config.json` changes.
 
 ## 6. Prepare players
