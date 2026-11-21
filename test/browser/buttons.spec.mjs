@@ -92,6 +92,8 @@ test('buttons not covered elsewhere: mult upgrade, gem sale, cancel voyage, Parl
       await select(target);
       await B.page.locator('#sheet button[data-act="visit"]').click();
       await expect.poll(shipOfB).toBe(target);
+      // Wait for the visit action itself to finish: when the ship arrives it re-selects the visited island.
+      await expect(B.page.locator('#sheet .notice')).toContainText(/Visit .*: done/, { timeout: 30_000 });
       await expect(B.page.locator('#sheet')).toContainText("You're visiting", { timeout: 20_000 });
       await expect(B.page.locator('#sheet button', { hasText: 'Go ashore' })).toBeVisible();
       expect(await game.readContract({ address: cfg.sea, abi: seaAbi, functionName: 'visited', args: [B.address, target] })).toBe(false);
@@ -100,8 +102,9 @@ test('buttons not covered elsewhere: mult upgrade, gem sale, cancel voyage, Parl
       const bHome = Number((await game.readContract({ address: cfg.sea, abi: seaAbi, functionName: 'captainView',
         args: [B.address] })).home);
       await select(bHome);
-      await B.page.locator('#sheet button[data-act="move"]').click();
+      await B.page.locator('#sheet button[data-act="move"]').click({ timeout: 30_000 });
       await expect.poll(shipOfB).toBe(bHome);
+      await expect(B.page.locator('#sheet .notice')).toContainText(/Sail to .*: done/, { timeout: 30_000 });
       await select(target);
       const jump = B.page.locator('#sheet button[data-act="jump"]');
       await expect(jump).toBeEnabled();
