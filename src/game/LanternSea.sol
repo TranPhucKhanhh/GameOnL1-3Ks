@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
 
+/// @notice The one BossRaid view LanternSea needs: until when two captains lead the current raid together (0 if not).
+interface IRaidCrew {
+    function crewUntil(address a, address b) external view returns (uint64);
+}
+
 /// @title LanternSea (Game L1 core)
 /// @notice Captains, sailing charges, the hashed sea graph, island claims, captain's-log notes, coins, gems and Parley.
 /// Coins and gems are free in-game points: they cannot be bought and have no withdrawal or bridge path.
@@ -73,6 +78,8 @@ contract LanternSea {
     mapping(uint16 => mapping(uint8 => bool)) public tileTaken;
     mapping(bytes32 => uint64) public parleyUntil;
     mapping(bytes32 => uint64) public parleyDay;
+    /// While visiting a Parley partner's or raid crewmate's island, the visit ends at this time and the ship is home again.
+    mapping(address => uint64) public visitUntil;
 
     // ---------------------------------------------------------------- events & errors
 
@@ -87,6 +94,7 @@ contract LanternSea {
     event CoinsChanged(address indexed captain, uint256 balance);
     event GemSold(address indexed captain, uint8 gemType, uint256 count, uint256 coins);
     event ShipMoved(address indexed captain, uint16 indexed island);
+    event Visiting(address indexed captain, address indexed host, uint16 indexed island, uint64 until);
 
     error NotRegistered();
     error AlreadyRegistered();
@@ -210,7 +218,7 @@ contract LanternSea {
     /// @notice Sail lane `dir` from the island where your ship is moored. Co-op lanes must go through CoopSail.
     function sail(uint16 from, uint8 dir) external {
         if (!visited[msg.sender][from]) revert NotVisited();
-        if (captains[msg.sender].at != from) revert NotAtIsland();
+        if (shipOf(msg.sender) != from) revert NotAtIsland();
         (uint16 to, uint8 cost) = route(from, dir);
         if (cost >= COOP_MIN_COST) revert CoopRequired();
         _spendCharges(msg.sender, cost);
@@ -228,8 +236,30 @@ contract LanternSea {
         emit ShipMoved(msg.sender, island);
     }
 
-    function shipOf(address captain) external view returns (uint16) {
-        return captains[captain].at;
+    /// @notice Visit an island your Parley partner or raid crewmate has found: free, read-only (go ashore, read notes).
+    /// It does not count as your visit: no coins, no lanes, no notes. When the Parley or raid ends the ship is home again.
+    function visit(address host, uint16 island) external {
+        Captain storage c = captains[msg.sender];
+        if (!c.registered) revert NotRegistered();
+        if (!visited[host][island]) revert NotVisited();
+        uint64 until = parleyUntil[pairKey(host, msg.sender)];
+        if (bossRaid != address(0)) {
+            uint64 crew = IRaidCrew(bossRaid).crewUntil(msg.sender, host);
+            if (crew > until) until = crew;
+        }
+        if (host == msg.sender || until < block.timestamp) revert NoActiveParley();
+        c.at = island;
+        visitUntil[msg.sender] = until;
+        emit ShipMoved(msg.sender, island);
+        emit Visiting(msg.sender, host, island, until);
+    }
+
+    /// @notice Where the ship is. A ship on an island you have not found yourself is only visiting: once the visit
+    /// ends it is back at your home island, with no transaction needed.
+    function shipOf(address captain) public view returns (uint16) {
+        Captain storage c = captains[captain];
+        if (visited[captain][c.at] || visitUntil[captain] >= block.timestamp) return c.at;
+        return c.home;
     }
 
     function _bumpStreak(Captain storage c) internal {
@@ -456,6 +486,7 @@ contract LanternSea {
         uint256[4] gems;
         uint256 visitedCount;
         uint16 at;
+        uint64 visitUntil; // nonzero while the ship is visiting someone else's island
     }
 
     function captainView(address captain) external view returns (CaptainView memory v) {
@@ -474,7 +505,8 @@ contract LanternSea {
             c.coins,
             gemBalance[captain],
             visitedList[captain].length,
-            c.at
+            shipOf(captain),
+            !visited[captain][c.at] && visitUntil[captain] >= block.timestamp ? visitUntil[captain] : 0
         );
     }
 

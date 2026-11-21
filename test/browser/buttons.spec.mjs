@@ -24,6 +24,7 @@ async function grantGem(cfg, a, b) {
 
 test('buttons not covered elsewhere: mult upgrade, gem sale, cancel voyage, Parley jump, copy, disconnect, exit view',
   async ({ browser }) => {
+    test.setTimeout(420_000); // many flows in one test (two captains, Parley, visit, jump, cabinet link)
     const cfg = loadConfig();
     const game = gameClient(cfg);
     const seaAbi = loadAbi('LanternSea');
@@ -83,7 +84,25 @@ test('buttons not covered elsewhere: mult upgrade, gem sale, cancel voyage, Parl
         args: [A.address] })).home);
       const target = home; // A's home: B has not been there
       expect(await game.readContract({ address: cfg.sea, abi: seaAbi, functionName: 'visited', args: [B.address, target] })).toBe(false);
-      await B.page.evaluate(n => window.__lantern.map.game.scene.getScene('sea').onSelect(n), target);
+      const select = n => B.page.evaluate(i => window.__lantern.map.game.scene.getScene('sea').onSelect(i), n);
+      const shipOfB = () => game.readContract({ address: cfg.sea, abi: seaAbi, functionName: 'shipOf', args: [B.address] });
+
+      // Visit first: free, read-only, and it does not count as B finding the island.
+      await B.page.bringToFront(); // the sailing animation only runs in the foreground tab
+      await select(target);
+      await B.page.locator('#sheet button[data-act="visit"]').click();
+      await expect.poll(shipOfB).toBe(target);
+      await expect(B.page.locator('#sheet')).toContainText("You're visiting", { timeout: 20_000 });
+      await expect(B.page.locator('#sheet button', { hasText: 'Go ashore' })).toBeVisible();
+      expect(await game.readContract({ address: cfg.sea, abi: seaAbi, functionName: 'visited', args: [B.address, target] })).toBe(false);
+
+      // Sail home (free), then jump for good with Parley: that one costs a charge and counts as B's own visit.
+      const bHome = Number((await game.readContract({ address: cfg.sea, abi: seaAbi, functionName: 'captainView',
+        args: [B.address] })).home);
+      await select(bHome);
+      await B.page.locator('#sheet button[data-act="move"]').click();
+      await expect.poll(shipOfB).toBe(bHome);
+      await select(target);
       const jump = B.page.locator('#sheet button[data-act="jump"]');
       await expect(jump).toBeEnabled();
       await jump.click();

@@ -525,6 +525,51 @@ contract LanternSeaTest {
         _ok(!sea.parleyActive(alice, bob), "ENDED");
     }
 
+    function testParleyPartnersVisitFreeAndShipReturnsHomeWhenItEnds() public {
+        _register(alice);
+        _register(bob);
+        uint16 aliceHome = sea.homeOf(alice);
+        uint16 bobHome = sea.homeOf(bob);
+        if (aliceHome == bobHome) return; // same home: nothing to visit
+        // No Parley yet: no visiting.
+        vm.prank(bob);
+        vm.expectRevert(LanternSea.NoActiveParley.selector);
+        sea.visit(alice, aliceHome);
+        uint64 expiry = uint64(block.timestamp + 60);
+        bytes memory code = _parleyCode(ALICE_PK, expiry);
+        vm.prank(bob);
+        sea.parley(alice, expiry, code);
+        (uint8 chargesBefore,) = sea.chargesOf(bob);
+        uint256 coinsBefore = _coins(bob);
+        vm.prank(bob);
+        sea.visit(alice, aliceHome);
+        _eq(sea.shipOf(bob), aliceHome, "VISITING");
+        _ok(!sea.visited(bob, aliceHome), "VISIT_IS_NOT_DISCOVERY");
+        (uint8 chargesAfter,) = sea.chargesOf(bob);
+        _eq(chargesAfter, chargesBefore, "VISIT_IS_FREE");
+        _eq(_coins(bob), coinsBefore, "VISIT_PAYS_NOTHING");
+        _ok(sea.captainView(bob).visitUntil > 0, "VIEW_SHOWS_TIMER");
+        // A visiting ship cannot open lanes from the host's island or plant notes there.
+        vm.prank(bob);
+        vm.expectRevert(LanternSea.NotVisited.selector);
+        sea.sail(aliceHome, 0);
+        // Only islands the host has found.
+        uint16 unknown = uint16((uint256(aliceHome) + 1) % 256);
+        if (!sea.visited(alice, unknown)) {
+            vm.prank(bob);
+            vm.expectRevert(LanternSea.NotVisited.selector);
+            sea.visit(alice, unknown);
+        }
+        // Parley over: the ship is home again with no transaction.
+        vm.warp(block.timestamp + 11 minutes);
+        _eq(sea.shipOf(bob), bobHome, "BACK_HOME");
+        _eq(sea.captainView(bob).at, bobHome, "VIEW_BACK_HOME");
+        _eq(sea.captainView(bob).visitUntil, 0, "VIEW_NO_TIMER");
+        vm.prank(bob);
+        vm.expectRevert(LanternSea.NoActiveParley.selector);
+        sea.visit(alice, aliceHome);
+    }
+
     function testParleyRejectsExpiredForgedOrSelfCodes() public {
         _register(alice);
         _register(bob);
@@ -785,6 +830,22 @@ contract LanternSeaTest {
         raid.receiveTeleporterMessage(GAME, address(escrow), hex"");
         vm.expectRevert(CrossChainEndpoint.PeerAlreadySet.selector);
         raid.setPeer(address(1));
+    }
+
+    function testRaidLeadCrewVisitsUntilTheBossLeaves() public {
+        (uint256 raidId,) = _acceptRaid();
+        uint16 aliceHome = sea.homeOf(alice);
+        uint16 bobHome = sea.homeOf(bob);
+        (,,, uint64 endsAt) = raid.bossOf(raidId);
+        _eq(raid.crewUntil(alice, bob), endsAt, "CREW_UNTIL");
+        _eq(raid.crewUntil(bob, alice), endsAt, "CREW_EITHER_ORDER");
+        _eq(raid.crewUntil(alice, address(0xCA401)), 0, "NOT_CREW");
+        if (aliceHome == bobHome) return;
+        vm.prank(bob);
+        sea.visit(alice, aliceHome);
+        _eq(sea.shipOf(bob), aliceHome, "CREW_VISIT");
+        vm.warp(endsAt + 1);
+        _eq(sea.shipOf(bob), bobHome, "HOME_WHEN_BOSS_LEAVES");
     }
 
     function testRaidLeadMustBeAcceptedByPartner() public {

@@ -8,7 +8,7 @@ Every captain gets a home island, three sailing charges and a sea that nobody ha
 - **Crew lanes:** these cost ⚓4–5, more than one captain can hold, so two captains must pool charges. Then both must solve a 4×4 sliding puzzle within 60 seconds of joining. When a crew lands on an unclaimed island, each captain earns a gem.
 - **Collisions:** the sea is a small hash space on purpose. You will stumble onto other captains' islands and bases.
 - **Go ashore:** on the island where your ship is, tap **Go ashore** to walk its hash-generated land. Build a note pole for 25 coins: the first pole stands in the centre, and later ones go on any free spot you pick. Tap a pole to read it.
-- **Parley:** meet in person and scan each other's QR code. For a while your maps are shared, and you can jump to any of your crewmate's islands for ⚓1.
+- **Parley:** meet in person and scan each other's QR code. For a while your maps are shared: you can **visit** any of your partner's islands for free to go ashore and read its notes, or jump there for good for ⚓1. A raid's two lead captains can visit each other's islands the same way while their raid lasts. When the Parley or raid ends, a visiting ship is back at its home island automatically.
 - **Debug coins (local demo only):** Help → Debug adds 100 or 1000 free in-game coins on the local chain.
 - **Ship:** five part slots and two upgradable stats, damage and multiplier. Parts can add damage, add multiplier, or multiply total power.
 - **Boss raids:** a co-op crew leads a time-limited boss raid. They can escrow test USDC on C-Chain as a bounty. Helpers spend charges to attack. If the boss falls, helpers are paid by damage share, and the rest goes back to the crew.

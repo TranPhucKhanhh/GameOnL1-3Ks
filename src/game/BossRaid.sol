@@ -199,6 +199,15 @@ contract BossRaid is CrossChainEndpoint {
         }
     }
 
+    /// @notice Until when `a` and `b` lead this epoch's open raid together; 0 if they do not.
+    /// LanternSea uses it so a lead crew can visit each other's islands while the raid lasts.
+    function crewUntil(address a, address b) external view returns (uint64) {
+        Raid storage r = raids[currentRaidId()];
+        if (r.status != Status.Active && r.status != Status.Defeated) return 0;
+        bool pair = (a == r.leadA && b == r.leadB) || (a == r.leadB && b == r.leadA);
+        return pair ? r.deadline : 0;
+    }
+
     function raidView(uint256 raidId) external view returns (Raid memory) {
         return raids[raidId];
     }

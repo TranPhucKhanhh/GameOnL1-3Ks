@@ -21,7 +21,7 @@ const raidAbi = raidAbiJson as Abi, escrowAbi = escrowAbiJson as Abi, usdcAbi = 
 // ------------------------------------------------------------------ types & static data
 
 type CaptainView = { registered: boolean; home: number; charges: number; nextChargeAt: bigint; streak: number; sails: number;
-  islandsFound: number; coins: bigint; gems: readonly bigint[]; visitedCount: bigint; at: number };
+  islandsFound: number; coins: bigint; gems: readonly bigint[]; visitedCount: bigint; at: number; visitUntil: bigint };
 type Note = { author: Address; at: bigint; tile: number; text: string };
 type Voyage = { id: bigint; a: Address; b: Address; from: number; to: number; dir: number; cost: number; aCharges: number;
   status: number; startedAt: bigint; aSolvedAt: bigint; bSolvedAt: bigint; fresh: boolean };
@@ -67,12 +67,31 @@ const homes = new Map<number, Address[]>();
 let partners: { who: Address; until: number }[] = [];
 let sharedWith: Address | null = null;
 let partnerVisited = new Set<number>();
+// Whose map we share: the active Parley partner, or else this raid's other lead captain. Their islands can be visited.
+let visitHost: Address | null = null;
 let selected: number | null = null;
 let inside: number | null = null; // island whose interior is on screen
 // Where the ship is moored (LanternSea.shipOf). Lanes and going ashore work only from here; the contract enforces it.
 // Between chain reads the app moves it optimistically so the map and panel follow the sail animation.
 let shipAt: number | null = null;
-function syncShip() { shipAt = me?.registered ? Number(me.at) : null; }
+function syncShip() {
+  const before = shipAt;
+  shipAt = me?.registered ? Number(me.at) : null;
+  // A visit ended (Parley or raid over): the chain already has the ship back home. Leave that island's view.
+  if (before !== null && shipAt !== before && !visited.includes(before) && me?.visitUntil === 0n) {
+    if (inside === before) { inside = null; bubble = null; map?.leaveIsland(); }
+    if (selected === before) selected = shipAt;
+    notice = `Your visit ended, so your ship sailed home to ${islandName(shipAt ?? 0)}.`;
+    noticeError = false;
+  }
+}
+
+/** This raid's other lead, while the lead crew's raid is open (they may visit each other's islands). */
+function crewMate(addr: Address): Address | null {
+  const r = raidView;
+  if (!r || (r.status !== 2 && r.status !== 3) || Number(r.deadline) < now()) return null;
+  return same(r.leadA, addr) ? r.leadB : same(r.leadB, addr) ? r.leadA : null;
+}
 let placing = false, pickTile: number | null = null, selectedNote: number | null = null, focusLane: number | null = null;
 // Speech bubble over a note pole: read a note, or write a new one right on the sign.
 type Bubble = { kind: 'read'; index: number } | { kind: 'write'; tile: number };
@@ -134,7 +153,7 @@ const FRIENDLY: [RegExp, string][] = [
   [/NotAtIsland/, 'Your ship is not here. Sail to this island first: lanes leave from where the ship is moored.'],
   [/NotRegistered/, 'Claim your home island first.'],
   [/AlreadyRegistered/, 'You already have a home island.'],
-  [/NoActiveParley/, 'Your Parley has ended. Meet again to share maps.'],
+  [/NoActiveParley/, 'Your Parley or raid crew has ended. Meet again (or lead a raid together) to visit their islands.'],
   [/NotEnoughGems/, 'You have no gem of that kind to sell.'],
   [/BadNote/, 'Notes must be 1 to 140 bytes.'],
   [/BadVoyage/, 'Pick a registered crewmate (not yourself) and an island you have visited.'],
@@ -223,8 +242,9 @@ async function loadPartners(addr: Address) {
   } catch { partners = []; }
   if (sharedWith && !partners.some(p => same(p.who, sharedWith) && p.until >= now())) sharedWith = null;
   if (!sharedWith) sharedWith = partners.find(p => p.until >= now())?.who ?? null;
-  partnerVisited = sharedWith
-    ? new Set((await read<readonly number[]>(config.game, config.sea, seaAbi, 'visitedIslands', [sharedWith])).map(Number))
+  visitHost = sharedWith ?? crewMate(addr);
+  partnerVisited = visitHost
+    ? new Set((await read<readonly number[]>(config.game, config.sea, seaAbi, 'visitedIslands', [visitHost])).map(Number))
     : new Set();
 }
 
@@ -532,7 +552,11 @@ function islandPanel() {
       : isMine ? `<button class="go wide" data-act="move" ${busy ? 'disabled' : ''}>Sail to ${esc(islandName(n))}</button>
         <p class="hint">Your ship is at ${shipName}. Trips between islands you know cost no charge (one free transaction); new lanes open only from where the ship is.</p>` : ''}
     <div class="badges">${badges}</div>
-    ${isPartner ? `<p>Your Parley partner has been here.</p><button class="primary wide" data-act="jump" ${me.charges >= 1 && !busy ? '' : 'disabled'}>Jump here with Parley ⚓1</button>` : ''}
+    ${!isMine && atShip && me.visitUntil > 0n ? `<p class="hint">You're visiting ${visitHost ? short(visitHost) : 'a crewmate'}'s island: go ashore and read its notes. Your ship sails home in ${tick(Number(me.visitUntil))}.</p>` : ''}
+    ${isPartner && !atShip ? `<p>${same(visitHost, sharedWith) ? 'Your Parley partner' : 'Your raid crewmate'} has been here.</p>
+      <button class="go wide" data-act="visit" ${busy ? 'disabled' : ''}>Visit · free while you're connected</button>
+      ${sharedWith ? `<button class="wide" data-act="jump" ${me.charges >= 1 && !busy ? '' : 'disabled'}>Jump here for good with Parley ⚓1</button>` : ''}
+      <p class="hint">A visit lets you go ashore and read notes; your ship comes home when the ${sharedWith ? 'Parley' : 'raid'} ends. Jumping counts as finding the island yourself.</p>` : ''}
     ${isMine && atShip ? `<h3>Sea lanes <span class="muted">· the docks on the shore</span></h3><ul class="lanes">${laneRows}</ul>
       <p class="hint">Rewards are fixed by lane cost (⚓1: 10–20 coins, ⚓2: 25–40, crew: 60–100 + gem). Your daily streak sets where you land in the range. Claimed islands pay nothing.</p>` : ''}
     <h3>Note poles <span class="muted">${notes.length} on this island · tap a pole to read it</span></h3>
@@ -941,6 +965,15 @@ function onAction(el: HTMLElement) {
     case 'back-sea': inside = null; placing = false; pickTile = null; selectedNote = null; bubble = null; map?.leaveIsland(); render(); return;
     case 'zoom-in': map?.zoomBy(1.25); return;
     case 'zoom-out': map?.zoomBy(0.8); return;
+    case 'visit': return void act('Visiting', async () => {
+      const to = selected!, from = shipAt ?? me!.home;
+      if (!visitHost) throw new Error('Visiting needs an active Parley or a raid lead crew.');
+      inside = null; bubble = null;
+      await tx(g, config.sea, seaAbi, 'visit', [visitHost, to], `Visit ${islandName(to)}`);
+      await map?.sailTo(from, to);
+      shipAt = to;
+      selectIsland(to);
+    });
     case 'jump': return void act('Jumping', async () => {
       const to = selected!;
       const from = shipAt ?? me!.home;
