@@ -342,3 +342,10 @@ button::after {
 }
 @keyframes bubble-pop { from { transform: translateX(-50%) scale(.85); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
 .debug-row { display: flex; gap: 10px; flex-wrap: wrap; }
+/* A link styled like a button (e.g. the Circle test USDC faucet on public networks). */
+a.button {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 54px; padding: 10px 18px; font-size: 19px;
+  line-height: 1.1; color: var(--ink); text-decoration: none; background: linear-gradient(#ffffff, #ffefd0);
+  border: 3px solid var(--ink); border-radius: 18px; box-shadow: 0 5px 0 var(--ink), inset 0 -4px 0 #0000001a, inset 0 3px 0 #ffffffb0;
+  font-family: var(--title);
+}

@@ -172,6 +172,7 @@ const FRIENDLY: [RegExp, string][] = [
   [/AlreadyInstalled/, 'That part is already fitted.'],
   [/MaxLevel/, 'That stat is at its maximum level.'],
   [/WrongStatus/, 'That is no longer possible: the voyage or raid has moved on. The panel has refreshed.'],
+  [/transfer amount exceeds balance/i, 'Not enough test USDC in your wallet. Get free test USDC at faucet.circle.com (choose Avalanche Fuji).'],
   [/User (rejected|denied)/i, 'Cancelled in wallet.']
 ];
 
@@ -711,7 +712,7 @@ function raidPanel() {
     } else if (r.status === 2 && timeLeft > 0) {
       actions = `<button class="primary wide danger" data-act="attack" ${me.charges >= 1 && !busy ? '' : 'disabled'}>Sail & attack ⚓1 · ${lead ? `crew power ${crewPower}` : `power ${stats?.power ?? 0n}`}</button>`;
       if (lead) actions += `<div class="coop-form"><label>Add to the helpers' bounty (test USDC, max 100 per raid)<input id="bounty" type="number" min="1" max="100" value="10" inputmode="decimal"></label>
-        <div class="row"><button data-act="fund">Escrow on C-Chain</button>${config.mode === 'local' ? '<button data-act="faucet">Get 100 test USDC</button>' : ''}</div>
+        <div class="row"><button data-act="fund">Escrow on C-Chain</button>${config.mode === 'local' ? '<button data-act="faucet">Get 100 test USDC</button>' : '<a class="button" href="https://faucet.circle.com/" target="_blank" rel="noreferrer">Get test USDC ↗</a>'}</div>
         <p class="hint">Your wallet: ${usd(usdcBalance)} USDC. Helpers are paid by damage share only if the boss falls; the rest returns to you.</p></div>`;
     }
     if ((r.status === 3 || (r.status === 2 && timeLeft <= 0)) && !r.settled) actions += '<button class="primary wide" data-act="settle">Settle raid (sends the result over ICM)</button>';
@@ -1072,6 +1073,9 @@ function onAction(el: HTMLElement) {
         read<bigint>(c, config.escrow, escrowAbi, 'bountyOf', [id]),
         read<bigint>(c, config.escrow, escrowAbi, 'maxBounty')]);
       if (amount <= 0n || funded + amount > cap) throw new Error(`Enter a positive amount up to ${formatUnits(cap - funded, 6)} test USDC remaining for this raid.`);
+      // Check the wallet first: otherwise approve goes through and fund fails inside the token.
+      const balance = await read<bigint>(c, config.usdc, usdcAbi, 'balanceOf', [signer!.address]);
+      if (balance < amount) throw new Error(`Your wallet has ${formatUnits(balance, 6)} test USDC on ${config.vault.name}, less than ${formatUnits(amount, 6)}. ${config.mode === 'local' ? 'Tap Get 100 test USDC.' : 'Get free test USDC at faucet.circle.com (choose Avalanche Fuji), then try again.'}`);
       await tx(c, config.usdc, usdcAbi, 'approve', [config.escrow, amount], 'Approve exact bounty');
       await tx(c, config.escrow, escrowAbi, 'fund', [id, amount], 'Escrow bounty (ICM → L1)');
     });
