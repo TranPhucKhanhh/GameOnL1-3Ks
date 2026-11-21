@@ -56,8 +56,12 @@ test('buttons not covered elsewhere: mult upgrade, gem sale, cancel voyage, Parl
       await expect(A.page.locator('#sheet')).toContainText('Copied.');
       expect(await A.page.evaluate(() => navigator.clipboard.readText())).toContain(`?captain=${A.address}`);
 
-      // Crew: an invitation can be cancelled before the crewmate joins.
+      // The crew landing moved A's ship there, so home now offers a free "Sail to" instead of its lanes.
       await openTab(A.page, 'island');
+      await expect(A.page.locator('#sheet button[data-act="sail"], #sheet button[data-act="coop-form"]')).toHaveCount(0);
+      await A.page.locator('#sheet button[data-act="move"]').click();
+
+      // Crew: an invitation can be cancelled before the crewmate joins.
       await act(A.page, 'Plan crew voyage');
       await A.page.fill('#partner', B.address);
       await act(A.page, 'Send invitation');
@@ -98,8 +102,14 @@ test('buttons not covered elsewhere: mult upgrade, gem sale, cancel voyage, Parl
         expect(new URL(page.url()).search).toBe('');
       } finally { await viewer.close(); }
 
-      // Help: Disconnect returns to the connect box.
+      // Help: the local debug button adds coins.
       await openTab(B.page, 'help');
+      const bBefore = await coins(B.address);
+      await B.page.locator('#sheet button[data-act="debug-coins"][data-amount="100"]').click();
+      await expect.poll(() => coins(B.address)).toBe(bBefore + 100n);
+      await expect(B.page.locator('.meter.coin')).toHaveText(String(bBefore + 100n));
+
+      // Help: Disconnect returns to the connect box.
       await B.page.locator('#sheet button[data-act="disconnect"]').click();
       await expect(B.page.locator('#sheet')).toContainText('Play as a local guest captain');
     });

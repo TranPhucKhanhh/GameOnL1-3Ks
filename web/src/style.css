@@ -341,3 +341,4 @@ button::after {
   font-size: 20px; line-height: 1; border-radius: 10px; box-shadow: 0 2px 0 var(--ink);
 }
 @keyframes bubble-pop { from { transform: translateX(-50%) scale(.85); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
+.debug-row { display: flex; gap: 10px; flex-wrap: wrap; }

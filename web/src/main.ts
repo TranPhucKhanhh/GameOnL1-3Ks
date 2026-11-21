@@ -1,4 +1,4 @@
-import { formatUnits, isAddress, parseUnits, toHex, type Abi, type Address, type Hex } from 'viem';
+import { encodeFunctionData, formatUnits, isAddress, numberToHex, parseUnits, toHex, type Abi, type Address, type Hex } from 'viem';
 import QRCode from 'qrcode';
 import jsQR from 'jsqr';
 import seaAbiJson from './generated/LanternSea.json';
@@ -69,6 +69,26 @@ let sharedWith: Address | null = null;
 let partnerVisited = new Set<number>();
 let selected: number | null = null;
 let inside: number | null = null; // island whose interior is on screen
+// Where the ship is moored. Lanes (and going ashore) only work from here; known islands are a free trip away.
+// Kept in the browser per captain: the chain records which islands you have visited, not where you are.
+let shipAt: number | null = null;
+let seenVisited = 0;
+const shipKey = () => `lantern-ship-${(who() ?? '').toLowerCase()}`;
+function saveShip(n: number) {
+  shipAt = n;
+  try { localStorage.setItem(shipKey(), String(n)); } catch { /* storage blocked: the ship stays put this session */ }
+}
+/** A newly visited island (a sail, a crew landing, a Parley jump) is where the ship now is. */
+function syncShip() {
+  if (!me?.registered) { shipAt = null; seenVisited = 0; return; }
+  if (seenVisited > 0 && visited.length > seenVisited) saveShip(visited[visited.length - 1]);
+  else if (shipAt === null || !visited.includes(shipAt)) {
+    let stored: number | null = null;
+    try { const v = localStorage.getItem(shipKey()); stored = v === null ? null : Number(v); } catch { /* storage blocked */ }
+    shipAt = stored !== null && visited.includes(stored) ? stored : visited[visited.length - 1] ?? me.home;
+  }
+  seenVisited = visited.length;
+}
 let placing = false, pickTile: number | null = null, selectedNote: number | null = null, focusLane: number | null = null;
 // Speech bubble over a note pole: read a note, or write a new one right on the sign.
 type Bubble = { kind: 'read'; index: number } | { kind: 'write'; tile: number };
@@ -176,7 +196,7 @@ async function connect(kind: 'guest' | 'injected') {
   signer = kind === 'guest' ? await guestSigner(config) : await injectedSigner();
   viewAs = null;
   notice = kind === 'guest' ? 'Guest captain ready (this tab only). Open another tab for a second captain.' : 'Wallet connected.';
-  me = null; visited = []; selected = null; island = null;
+  me = null; visited = []; selected = null; island = null; shipAt = null; seenVisited = 0;
 }
 
 // ------------------------------------------------------------------ reads
@@ -274,6 +294,7 @@ async function refresh() {
       jobs.push((async () => {
         me = await read<CaptainView>(config.game, config.sea, seaAbi, 'captainView', [addr]);
         visited = me.registered ? (await read<readonly number[]>(config.game, config.sea, seaAbi, 'visitedIslands', [addr])).map(Number) : [];
+        syncShip();
         const [s, eq, dl, ml] = await Promise.all([
           read<Stats>(config.game, config.shipyard, yardAbi, 'statsOf', [addr]),
           read<readonly number[]>(config.game, config.shipyard, yardAbi, 'equippedOf', [addr]),
@@ -285,7 +306,7 @@ async function refresh() {
     }
     await Promise.all(jobs);
     if (selected !== null) await loadIsland(selected);
-    if (me?.registered && selected === null) selected = me.home;
+    if (me?.registered && selected === null) selected = shipAt ?? me.home;
   } catch (error) {
     notice = `Cannot reach the chains: ${(error as Error).message.slice(0, 140)}`;
     noticeError = true;
@@ -308,7 +329,7 @@ function updateMap() {
   for (const [n, list] of homes) if (list.some(a => !same(a, who()))) otherHomes.add(n);
   map.update({
     seed, mapSize, visited: new Set(visited), partnerVisited, home: me?.registered ? me.home : null,
-    ship: me?.registered ? (visited[visited.length - 1] ?? me.home) : null, otherHomes,
+    ship: me?.registered ? shipAt ?? me.home : null, otherHomes,
     boss: boss?.island ?? null, selected
   });
   if (inside !== null) map.enterIsland(islandData(inside));
@@ -414,21 +435,31 @@ function renderBubble() {
   el.style.setProperty('--tail', `${pos.x - x}px`);
 }
 
-/** The ship sails across the sea to the island (camera follows), the island pops out of the fog, then we go ashore. */
+/** The ship sails across the sea to the island (camera follows) and the island pops out of the fog. It stays at sea. */
 async function voyageTo(from: number, to: number) {
   const coinsBefore = me?.coins ?? 0n;
   inside = null; placing = false; pickTile = null; bubble = null;
   busy = 'Sailing…'; render();
   await map?.sailTo(from, to);
   if (!visited.includes(to)) visited = [...visited, to];
+  saveShip(to);
+  seenVisited = visited.length;
   selected = to;
   updateMap();
   await refresh();
   const gained = (me?.coins ?? 0n) - coinsBefore;
   map?.floatText(to, gained > 0n ? `+${gained} coins!` : 'Already claimed');
   notice = gained > 0n ? `New island discovered: ${islandName(to)}! +${gained} coins.` : `${islandName(to)} was already claimed. Sign its log or sail on.`;
-  await new Promise(r => setTimeout(r, 1100));
-  enterIsland(to);
+  selectIsland(to);
+}
+
+/** Show an island's card (from the sea). Going ashore is a separate step, only where the ship is. */
+function selectIsland(n: number) {
+  selected = n; island = null; tab = 'island'; coopForm = null; sheetMin = false;
+  selectedNote = null; focusLane = null; bubble = null;
+  renderedTab = null; // start the panel at the top for the new island
+  render(); updateMap();
+  void loadIsland(n).then(() => { render(); updateMap(); });
 }
 
 function enterIsland(n: number) {
@@ -480,6 +511,8 @@ function islandPanel() {
   const n = selected;
   const isMine = visited.includes(n);
   const isPartner = !isMine && partnerVisited.has(n);
+  const atShip = n === shipAt;
+  const shipName = shipAt !== null ? esc(islandName(shipAt)) : '';
   const finder = island?.finder;
   const badges = [
     `<span class="badge theme-${islandTheme(seed, n)}">${THEMES[islandTheme(seed, n)].name} island</span>`,
@@ -488,7 +521,7 @@ function islandPanel() {
     finder && finder !== ZERO ? `<span class="badge">Discovered by ${name(finder)}</span>` : '',
     boss?.island === n ? `<span class="badge boss">☠ ${BOSSES[Number((raidId - 1n) % 4n)]} is here</span>` : ''
   ].join('');
-  const laneRows = isMine ? lanes(seed, mapSize, n).map(l => {
+  const laneRows = isMine && atShip ? lanes(seed, mapSize, n).map(l => {
     const known = visited.includes(l.to);
     const dest = known ? esc(islandName(l.to)) : 'Unknown waters';
     const can = me!.charges >= l.cost && !busy;
@@ -505,13 +538,15 @@ function islandPanel() {
   const firstPole = notes.length === 0;
   const noteForm = canNote ? `<p class="hint">${inside === n
     ? (firstPole ? 'Tap the "?" sign in the centre of the island to write the first note.' : 'Tap a glowing spot on the island to plant your note pole.')
-    : 'Go ashore to plant your note pole.'} A pole costs ${NOTE_COST} coins.</p>` : '';
+    : atShip ? 'Go ashore to plant your note pole.' : 'Sail here, then go ashore to plant your note pole.'} A pole costs ${NOTE_COST} coins.</p>` : '';
   return `<div class="card">
     <div class="island-head"><h2>${esc(islandName(n))}</h2><span class="muted">#${n}</span></div>
-    ${inside !== n ? `<button class="go wide" data-act="enter">Go ashore</button>` : ''}
+    ${inside === n ? '' : atShip ? `<button class="go wide" data-act="enter">Go ashore</button>`
+      : isMine ? `<button class="go wide" data-act="move" ${busy ? 'disabled' : ''}>Sail to ${esc(islandName(n))}</button>
+        <p class="hint">Your ship is at ${shipName}. Trips between islands you know are free; new lanes open from where the ship is.</p>` : ''}
     <div class="badges">${badges}</div>
     ${isPartner ? `<p>Your Parley partner has been here.</p><button class="primary wide" data-act="jump" ${me.charges >= 1 && !busy ? '' : 'disabled'}>Jump here with Parley ⚓1</button>` : ''}
-    ${isMine ? `<h3>Sea lanes <span class="muted">· the docks on the shore</span></h3><ul class="lanes">${laneRows}</ul>
+    ${isMine && atShip ? `<h3>Sea lanes <span class="muted">· the docks on the shore</span></h3><ul class="lanes">${laneRows}</ul>
       <p class="hint">Rewards are fixed by lane cost (⚓1: 10–20 coins, ⚓2: 25–40, crew: 60–100 + gem). Your daily streak sets where you land in the range. Claimed islands pay nothing.</p>` : ''}
     <h3>Note poles <span class="muted">${notes.length} on this island · tap a pole to read it</span></h3>
     ${notes.length ? `<ol class="notes">${noteRows}</ol>` : '<p class="muted">No poles yet. The first one stands in the centre.</p>'}
@@ -650,6 +685,10 @@ function helpPanel() {
       <li><b>Coins and gems</b> are free in-game points for ship parts and decoration. They cannot be bought or cashed out.</li>
       <li><b>Raids:</b> a co-op crew leads; they may escrow test USDC on C-Chain for helpers, paid by damage share over Avalanche ICM.</li>
     </ul>
+    ${config.mode === 'local' && signer && me?.registered ? `<h3>Debug <span class="muted">· local demo only</span></h3>
+      <p class="hint">Adds free in-game coins on the local chain, for testing upgrades and note poles.</p>
+      <div class="debug-row"><button data-act="debug-coins" data-amount="100" ${busy ? 'disabled' : ''}>+100 coins</button>
+      <button data-act="debug-coins" data-amount="1000" ${busy ? 'disabled' : ''}>+1000 coins</button></div>` : ''}
     <h3>Network</h3>
     <p class="muted">Game: ${esc(config.game.name)} (#${config.game.chainId}) · Money: ${esc(config.vault.name)} (#${config.vault.chainId}) · ${config.mode === 'local' ? 'mock messenger (local)' : 'Teleporter / ICM'}</p>
     ${signer ? `<p>Signed in as <code class="copy" data-copy="${signer.address}">${signer.address}</code> (${signer.kind === 'guest' ? 'local guest' : 'wallet'})</p>
@@ -818,6 +857,26 @@ async function copyText(text: string) {
   return ok;
 }
 
+/**
+ * Local demo only: credit free in-game coins by impersonating the BossRaid module on Anvil (the same shortcut the
+ * tests use). Public networks cannot impersonate, and the button is not shown there.
+ */
+async function debugCoins(amount: bigint) {
+  if (config.mode !== 'local' || !signer || !me?.registered) throw new Error('Debug coins: local demo only, after claiming your island.');
+  const p = pub(config.game);
+  const call = (method: string, params: unknown[]) => p.request({ method: method as never, params: params as never });
+  await call('anvil_impersonateAccount', [config.raid]);
+  try {
+    await call('anvil_setBalance', [config.raid, numberToHex(10n ** 20n)]);
+    const data = encodeFunctionData({ abi: seaAbi, functionName: 'addCoins', args: [signer.address, amount] });
+    const hash = await call('eth_sendTransaction', [{ from: config.raid, to: config.sea, data }]) as Hex;
+    await p.waitForTransactionReceipt({ hash });
+  } finally {
+    await call('anvil_stopImpersonatingAccount', [config.raid]);
+  }
+  notice = `Debug: +${amount} coins.`;
+}
+
 function addressInput(id: string) {
   const v = val(id);
   if (!isAddress(v)) throw new Error('Enter your crewmate\'s 0x address (they can copy it from the Crew tab).');
@@ -837,15 +896,16 @@ function onAction(el: HTMLElement) {
     case 'injected': return void act('Connecting wallet', () => connect('injected'));
     case 'disconnect':
       // Back to the connect box (it lives on the Sea tab); drop everything tied to the old captain.
-      signer = null; me = null; visited = []; selected = null; island = null; sharedWith = null; coopForm = null;
+      signer = null; me = null; visited = []; selected = null; island = null; sharedWith = null; coopForm = null; shipAt = null; seenVisited = 0;
       puzzle = null; inside = null; bubble = null; map?.leaveIsland(); tab = 'island'; sheetMin = false;
       render(); return;
     case 'exit-view': viewAs = null; history.replaceState(null, '', location.pathname); me = null; render(); return;
     case 'register': return void act('Claiming your island', () => tx(g, config.sea, seaAbi, 'register', [], 'Claim home island'));
     case 'sail': return void act('Setting sail', async () => {
       const dir = Number(el.dataset.dir);
-      const lane = lanes(seed, mapSize, selected!)[dir];
       const from = selected!;
+      if (from !== shipAt) throw new Error('Sail your ship to this island first: new lanes open from where it is moored.');
+      const lane = lanes(seed, mapSize, from)[dir];
       await tx(g, config.sea, seaAbi, 'sail', [from, dir], `Sail to ${visited.includes(lane.to) ? islandName(lane.to) : 'unknown waters'}`);
       await voyageTo(from, lane.to);
     });
@@ -878,13 +938,22 @@ function onAction(el: HTMLElement) {
       if (inside !== null && inside === selected) openBubble({ kind: 'read', index: selectedNote });
       else { render(); updateMap(); }
       return;
-    case 'enter': if (selected !== null) enterIsland(selected); return;
+    case 'enter': if (selected !== null && selected === shipAt) enterIsland(selected); return;
+    case 'move': return void act('Sailing', async () => {
+      const to = selected!, from = shipAt ?? me!.home;
+      if (!visited.includes(to)) throw new Error('You can only sail to islands you have found.');
+      inside = null; bubble = null;
+      if (from !== to) await map?.sailTo(from, to);
+      saveShip(to);
+      selectIsland(to);
+    });
+    case 'debug-coins': return void act('Adding debug coins', () => debugCoins(BigInt(el.dataset.amount!)));
     case 'back-sea': inside = null; placing = false; pickTile = null; selectedNote = null; bubble = null; map?.leaveIsland(); render(); return;
     case 'zoom-in': map?.zoomBy(1.25); return;
     case 'zoom-out': map?.zoomBy(0.8); return;
     case 'jump': return void act('Jumping', async () => {
       const to = selected!;
-      const from = visited[visited.length - 1] ?? me!.home;
+      const from = shipAt ?? me!.home;
       await tx(g, config.sea, seaAbi, 'parleyJump', [sharedWith, to], 'Parley jump');
       await voyageTo(from, to);
     });
@@ -1056,7 +1125,7 @@ async function boot() {
   }, true);
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeBubble(); });
   addEventListener('resize', () => renderBubble());
-  map = new SeaMap(document.querySelector('#sea')!, n => enterIsland(n), {
+  map = new SeaMap(document.querySelector('#sea')!, n => selectIsland(n), {
     onTile: t => {
       if (inside === null || !canWriteHere(inside)) return;
       openBubble({ kind: 'write', tile: t });
