@@ -40,7 +40,7 @@ export function islandPos(island: number, mapSize: number) {
 /** Handle map gestures. The locked island view accepts taps and keeps its fitted size. */
 function panZoom(scene: Phaser.Scene, locked = false) {
   let drag: { id: number; x: number; y: number; sx: number; sy: number } | null = null;
-  let pinch: { dist: number; zoom: number } | null = null;
+  let pinch: { dist: number; zoom: number; wx: number; wy: number } | null = null;
   let moved = false;
   const input = scene.input;
   const slop = 8 * RES; // finger wobble still counts as a tap
@@ -59,17 +59,20 @@ function panZoom(scene: Phaser.Scene, locked = false) {
     const cam = scene.cameras.main;
     drag = null;
     moved = true;
-    if (!pinch) { if (dist > 0) pinch = { dist, zoom: cam.zoom }; return; }
-    if (locked || dist <= 0) return;
-    // Zoom around the point between the fingers, so what is under them stays under them.
     const k = canvas.width / r.width;
     const mx = ((a.clientX + b.clientX) / 2 - r.left) * k, my = ((a.clientY + b.clientY) / 2 - r.top) * k;
-    const before = cam.getWorldPoint(mx, my);
+    if (!pinch) {
+      if (dist > 0) { cam.preRender(); const w = cam.getWorldPoint(mx, my); pinch = { dist, zoom: cam.zoom, wx: w.x, wy: w.y }; }
+      return;
+    }
+    if (locked || dist <= 0) return;
+    // Two fingers zoom AND pan: the sea point first under the fingers stays under their midpoint as they move.
+    // Some phone browsers (wallet in-app browsers) keep one-finger swipes for their own gestures; this always works.
     cam.setZoom(Phaser.Math.Clamp(pinch.zoom * dist / pinch.dist, MIN_ZOOM, MAX_ZOOM));
     cam.preRender(); // refresh the matrix so the new zoom is used below
-    const after = cam.getWorldPoint(mx, my);
-    cam.scrollX += before.x - after.x;
-    cam.scrollY += before.y - after.y;
+    const now = cam.getWorldPoint(mx, my);
+    cam.scrollX += pinch.wx - now.x;
+    cam.scrollY += pinch.wy - now.y;
   };
   canvas.addEventListener('touchstart', onTouch, { passive: true });
   for (const type of ['touchmove', 'touchend', 'touchcancel'] as const) window.addEventListener(type, onTouch, { passive: true });

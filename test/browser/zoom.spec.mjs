@@ -54,6 +54,15 @@ const getScroll = page => page.evaluate(() => {
   return { x: cam.scrollX, y: cam.scrollY };
 });
 
+/** Two fingers moved together (no spread) pan the sea: the fallback when a phone browser keeps one-finger swipes. */
+async function twoFingerPan(cdp, x, y, dx, dy, steps = 6) {
+  const at = i => [{ x: Math.round(x - 40 + (dx * i) / steps), y: Math.round(y + (dy * i) / steps), id: 1 },
+    { x: Math.round(x + 40 + (dx * i) / steps), y: Math.round(y + (dy * i) / steps), id: 2 }];
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(0) });
+  for (let i = 1; i <= steps; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at(i) });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+}
+
 /** One-finger drag must move the sea camera (in world units: screen delta / zoom). */
 async function expectDragPans(page, cdp, x, y) {
   const before = await getScroll(page);
@@ -93,6 +102,13 @@ test('mobile: pinch-to-zoom and +/- buttons zoom the sea map, the island keeps a
     await expect.poll(() => getSceneZoom(page, 'sea')).toBeLessThan(zoomAfterPinchOut * 0.85);
 
     await expectDragPans(page, cdp, centerX, centerY);
+
+    // Two fingers moved together pan without zooming.
+    const zoomBeforePan = await getSceneZoom(page, 'sea');
+    const beforePan = await getScroll(page);
+    await twoFingerPan(cdp, centerX, centerY, -120, -60);
+    await expect.poll(async () => (await getScroll(page)).x - beforePan.x).toBeGreaterThan(40);
+    expect(await getSceneZoom(page, 'sea')).toBeCloseTo(zoomBeforePan, 1);
 
     // 4. Tap + and - buttons on phone (sea view)
     const zoomBeforeBtn = await getSceneZoom(page, 'sea');
