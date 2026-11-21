@@ -215,32 +215,57 @@ async function loadIsland(n: number) {
   if (selected === n) island = { finder, notes, homes: hs };
 }
 
-async function loadHomes() {
-  try {
-    const logs = await pub(config.game).getContractEvents({ address: config.sea, abi: seaAbi, eventName: 'CaptainRegistered', fromBlock: 0n });
-    homes.clear();
-    for (const l of logs as unknown as { args: { captain: Address; home: number } }[]) {
-      const list = homes.get(Number(l.args.home)) ?? [];
-      list.push(l.args.captain);
-      homes.set(Number(l.args.home), list);
+// LanternSea's event history (home registrations, Parleys), read in chunks and kept between refreshes.
+// Public RPCs cap the block range of one log query (Dispatch: 2048), so a single query from block 0 fails there.
+const LOG_SPAN = 2000n;
+const seaLog = { next: null as bigint | null, regs: [] as { captain: Address; home: number }[],
+  parleys: [] as { a: Address; b: Address; until: number }[] };
+let seaLogSync: Promise<void> | null = null;
+function syncSeaLog() {
+  seaLogSync ??= (async () => {
+    const p = pub(config.game);
+    const latest = await p.getBlockNumber({ cacheTime: 0 });
+    if (seaLog.next === null) {
+      const start = config.game.startBlock;
+      // Unknown deploy block: read the last 40,000 blocks rather than the whole chain.
+      seaLog.next = start !== undefined ? BigInt(start) : latest > LOG_SPAN * 20n ? latest - LOG_SPAN * 20n : 0n;
     }
-  } catch { /* some RPCs limit log ranges; bases still show when you land */ }
+    let from: bigint = seaLog.next;
+    while (from <= latest) {
+      const to: bigint = from + LOG_SPAN - 1n < latest ? from + LOG_SPAN - 1n : latest;
+      const logs = await p.getContractEvents({ address: config.sea, abi: seaAbi, fromBlock: from, toBlock: to }) as unknown as
+        { eventName: string; args: Record<string, unknown> }[];
+      for (const l of logs) {
+        if (l.eventName === 'CaptainRegistered') seaLog.regs.push({ captain: l.args.captain as Address, home: Number(l.args.home) });
+        if (l.eventName === 'ParleyStarted') seaLog.parleys.push({ a: l.args.a as Address, b: l.args.b as Address, until: Number(l.args.until) });
+      }
+      from = to + 1n;
+      seaLog.next = from; // only advance past a chunk that was read
+    }
+  })().finally(() => { seaLogSync = null; });
+  return seaLogSync;
+}
+
+async function loadHomes() {
+  try { await syncSeaLog(); } catch { /* RPC hiccup: keep what was read; bases still show when you land */ }
+  homes.clear();
+  for (const r of seaLog.regs) {
+    const list = homes.get(r.home) ?? [];
+    if (!list.some(a => same(a, r.captain))) list.push(r.captain);
+    homes.set(r.home, list);
+  }
 }
 
 async function loadPartners(addr: Address) {
-  try {
-    const [asA, asB] = await Promise.all([
-      pub(config.game).getContractEvents({ address: config.sea, abi: seaAbi, eventName: 'ParleyStarted', args: { a: addr }, fromBlock: 0n }),
-      pub(config.game).getContractEvents({ address: config.sea, abi: seaAbi, eventName: 'ParleyStarted', args: { b: addr }, fromBlock: 0n })]);
-    const map = new Map<string, { who: Address; until: number }>();
-    for (const l of [...asA, ...asB] as unknown as { args: { a: Address; b: Address; until: bigint } }[]) {
-      const other = same(l.args.a, addr) ? l.args.b : l.args.a;
-      const until = Number(l.args.until);
-      const prev = map.get(other.toLowerCase());
-      if (!prev || prev.until < until) map.set(other.toLowerCase(), { who: other, until });
-    }
-    partners = [...map.values()].sort((x, y) => y.until - x.until);
-  } catch { partners = []; }
+  try { await syncSeaLog(); } catch { /* RPC hiccup: use what was read so far */ }
+  const map = new Map<string, { who: Address; until: number }>();
+  for (const l of seaLog.parleys) {
+    if (!same(l.a, addr) && !same(l.b, addr)) continue;
+    const other = same(l.a, addr) ? l.b : l.a;
+    const prev = map.get(other.toLowerCase());
+    if (!prev || prev.until < l.until) map.set(other.toLowerCase(), { who: other, until: l.until });
+  }
+  partners = [...map.values()].sort((x, y) => y.until - x.until);
   if (sharedWith && !partners.some(p => same(p.who, sharedWith) && p.until >= now())) sharedWith = null;
   if (!sharedWith) sharedWith = partners.find(p => p.until >= now())?.who ?? null;
   visitHost = sharedWith ?? crewMate(addr);

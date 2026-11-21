@@ -8,7 +8,8 @@
     "rpcUrl": "https://subnets.avax.network/dispatch/testnet/rpc",
     "blockchainId": "0x9f3be606497285d0ffbb5ac9ba24aa60346a9b1812479ed66cb329f394a4b1c7",
     "messenger": "0x253b2784c75e510dD0fF1da844684a1aC0aa5fcf",
-    "explorerUrl": "https://subnets-test.avax.network/dispatch"
+    "explorerUrl": "https://subnets-test.avax.network/dispatch",
+    "startBlock": 34490
   },
   "vault": {
     "chainId": 43113,

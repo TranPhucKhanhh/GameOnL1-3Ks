@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { isAddress, zeroAddress, parseAbi } from 'viem';
 import { artifact, clients } from './lib.mjs';
@@ -31,6 +31,18 @@ const config = {
   sea: address('SEA_ADDRESS'), coop: address('COOP_ADDRESS'), shipyard: address('SHIPYARD_ADDRESS'),
   raid: address('RAID_ADDRESS'), escrow: address('ESCROW_ADDRESS'), usdc: address('USDC_ADDRESS')
 };
+// The app reads the game's event history from the deploy block (public RPCs cap a log query's block range).
+// GAME_START_BLOCK wins; else the earliest block in Forge's DeployGame receipts.
+{
+  let start = process.env.GAME_START_BLOCK ? Number(process.env.GAME_START_BLOCK) : undefined;
+  const receipts = `broadcast/Deploy.s.sol/${config.game.chainId}/run-latest.json`;
+  if (start === undefined && existsSync(receipts)) {
+    const blocks = JSON.parse(readFileSync(receipts, 'utf8')).receipts.map(r => Number(r.blockNumber));
+    if (blocks.length) start = Math.min(...blocks);
+  }
+  if (start !== undefined && Number.isSafeInteger(start) && start >= 0) config.game.startBlock = start;
+  else console.warn('No GAME_START_BLOCK and no DeployGame receipts: the app will read only recent game events.');
+}
 if (!Number.isSafeInteger(config.game.chainId) || config.game.chainId <= 0 || [1, 43113, 43114].includes(config.game.chainId)) {
   throw new Error('GAME_CHAIN_ID must be your separate test Game L1.');
 }

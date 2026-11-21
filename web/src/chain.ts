@@ -4,7 +4,9 @@ import {
 } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 
-export type Network = { chainId: number; name: string; symbol: string; rpcUrl: string; blockchainId: string; messenger: Address; explorerUrl?: string };
+export type Network = { chainId: number; name: string; symbol: string; rpcUrl: string; blockchainId: string; messenger: Address; explorerUrl?: string;
+  /** Block the contracts were deployed at: event history is read from here (public RPCs cap a log query's range). */
+  startBlock?: number };
 export type Config = {
   mode: 'local' | 'fuji-icm';
   demoMode?: boolean;
