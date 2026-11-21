@@ -61,9 +61,15 @@ test('buttons not covered elsewhere: mult upgrade, gem sale, cancel voyage, Parl
       await openTab(A.page, 'island');
       await expect(A.page.locator('#sheet button[data-act="sail"], #sheet button[data-act="coop-form"]')).toHaveCount(0);
       await A.page.locator('#sheet button[data-act="move"]').click();
+      await expect(A.page.locator('#sheet .notice')).toContainText(/Sail to .*: done/, { timeout: 30_000 });
+
+      // The Crew tab lists where a crew voyage can start; "Plan it" opens the invitation on that lane.
+      await openTab(A.page, 'crew');
+      await expect(A.page.locator('#sheet')).toContainText('Crew lanes you can start');
+      await A.page.locator('#sheet button[data-act="crew-here"]').first().click();
+      await expect(A.page.locator('#partner')).toBeVisible();
 
       // Crew: an invitation can be cancelled before the crewmate joins.
-      await act(A.page, 'Plan crew voyage');
       await A.page.fill('#partner', B.address);
       await act(A.page, 'Send invitation');
       await expect(A.page.locator('#sheet')).toContainText('Waiting for crewmate');

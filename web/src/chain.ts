@@ -116,9 +116,27 @@ export async function injectedSigner(): Promise<Signer> {
   };
 }
 
+/**
+ * Reverts that only mean "the chain's clock is behind". An L1 like Dispatch makes a block only when there is a
+ * transaction, so a simulation (eth_call on the latest block) can run minutes in the past: a finished raid still
+ * "running", the new epoch not started, a puzzle window still open, lanterns not yet refilled. The real
+ * transaction lands in a fresh block with the current time, so these are sent anyway.
+ */
+const STALE_CLOCK = /RaidRunning|NotThisEpoch|WindowOpen|NotEnoughCharges/;
+
 export async function transact(signer: Signer, n: Network, address: Address, abi: Abi, functionName: string, args: unknown[] = []) {
   const wallet = await signer.wallet(n);
-  const { request } = await pub(n).simulateContract({ account: signer.address, address, abi, functionName, args });
+  let request: Record<string, unknown>;
+  try {
+    ({ request } = await pub(n).simulateContract({ account: signer.address, address, abi, functionName, args }) as { request: Record<string, unknown> });
+  } catch (error) {
+    const e = error as { shortMessage?: string; message?: string };
+    const text = `${e.shortMessage ?? ''} ${e.message ?? ''}`;
+    // proposeLead picks the current epoch itself, so a stale clock can show the old raid as taken.
+    const stale = STALE_CLOCK.test(text) || (functionName === 'proposeLead' && /WrongStatus/.test(text));
+    if (!stale) throw error;
+    request = { address, abi, functionName, args, gas: 2_000_000n }; // no estimate possible at the stale time
+  }
   const hash = await wallet.writeContract({ ...request, account: wallet.account ?? signer.address, chain: chainOf(n) } as never);
   const receipt = await pub(n).waitForTransactionReceipt({ hash });
   if (receipt.status !== 'success') throw new Error(`Transaction reverted: ${hash}`);

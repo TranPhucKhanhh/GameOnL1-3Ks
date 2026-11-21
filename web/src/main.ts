@@ -246,6 +246,16 @@ function syncSeaLog() {
   return seaLogSync;
 }
 
+/** captainView's charges at the real time: count refills since nextChargeAt, which the stale chain clock missed. */
+function liveCharges(v: CaptainView): CaptainView {
+  if (!v.registered || v.charges >= 3 || v.nextChargeAt === 0n || !chargeInterval) return v;
+  const next = Number(v.nextChargeAt);
+  if (now() < next) return v;
+  const gained = 1 + Math.floor((now() - next) / chargeInterval);
+  const charges = Math.min(3, v.charges + gained);
+  return { ...v, charges, nextChargeAt: charges >= 3 ? 0n : BigInt(next + gained * chargeInterval) };
+}
+
 async function loadHomes() {
   try { await syncSeaLog(); } catch { /* RPC hiccup: keep what was read; bases still show when you land */ }
   homes.clear();
@@ -292,8 +302,18 @@ async function loadVoyages(addr: Address) {
   }
 }
 
+// Seconds per boss epoch and per lantern refill (contract constants, read once).
+let bossEpoch = 0, chargeInterval = 0;
+
+/**
+ * The chain's view calls run at the latest block's time, and an L1 like Dispatch makes blocks only when someone
+ * transacts, so that time can be minutes old. Raid epochs and lantern refills follow the real clock instead.
+ */
 async function loadRaid(addr: Address | null) {
-  const id = await read<bigint>(config.game, config.raid, raidAbi, 'currentRaidId');
+  if (!bossEpoch) bossEpoch = Number(await read<bigint>(config.game, config.raid, raidAbi, 'bossEpoch'));
+  const chainId = await read<bigint>(config.game, config.raid, raidAbi, 'currentRaidId');
+  const clockId = BigInt(Math.floor(now() / bossEpoch)) + 1n;
+  const id = clockId > chainId ? clockId : chainId;
   const [b, view, prev] = await Promise.all([
     read<readonly [number, bigint, bigint, bigint]>(config.game, config.raid, raidAbi, 'bossOf', [id]),
     read<RaidView>(config.game, config.raid, raidAbi, 'raidView', [id]),
@@ -323,7 +343,7 @@ async function refresh() {
     const jobs: Promise<unknown>[] = [loadRaid(addr ?? null), loadHomes()];
     if (addr) {
       jobs.push((async () => {
-        me = await read<CaptainView>(config.game, config.sea, seaAbi, 'captainView', [addr]);
+        me = liveCharges(await read<CaptainView>(config.game, config.sea, seaAbi, 'captainView', [addr]));
         visited = me.registered ? (await read<readonly number[]>(config.game, config.sea, seaAbi, 'visitedIslands', [addr])).map(Number) : [];
         syncShip();
         const [s, eq, dl, ml] = await Promise.all([
@@ -625,6 +645,22 @@ function shipPanel() {
   </div>`;
 }
 
+/**
+ * Where a crew voyage can start. Only about 1 island in 4 has a crew lane, and the captain who proposes must have
+ * found that island and moored there, so point players at the lanes they (or their Parley partner) can use.
+ */
+function crewLanesMarkup() {
+  const crewCost = (n: number) => lanes(seed, mapSize, n).find(l => l.coop)?.cost;
+  const mineList = visited.filter(n => crewCost(n) !== undefined);
+  const theirs = visitHost ? [...partnerVisited].filter(n => crewCost(n) !== undefined && !visited.includes(n)) : [];
+  const mineRows = mineList.map(n => `<li><span><b>${esc(islandName(n))}</b><small>⚓${crewCost(n)} crew lane · ${n === shipAt ? 'your ship is here' : 'an island you found'}</small></span>
+    ${n === shipAt ? `<button class="go" data-act="crew-here" data-to="${n}">Plan it</button>` : `<button class="go" data-act="move" data-to="${n}" ${busy ? 'disabled' : ''}>Sail there · free</button>`}</li>`).join('');
+  const theirRows = theirs.map(n => `<li><span><b>${esc(islandName(n))}</b><small>⚓${crewCost(n)} crew lane · found by ${short(visitHost!)}</small></span></li>`).join('');
+  return `${mineList.length ? `<p class="hint">Crew lanes you can start (you pay part of the lanterns, your crewmate the rest):</p><ul class="list">${mineRows}</ul>` : ''}
+    ${theirs.length ? `<p class="hint">Crew lanes ${short(visitHost!)} can start: ask them to sail there and invite you. They need your address below.</p><ul class="list">${theirRows}</ul>` : ''}
+    ${!mineList.length && !theirs.length ? `<p class="muted">None of your islands has a crew lane yet (purple ⚓4–5 lanes; about 1 island in 4 has one). Keep exploring, or Parley with a captain who has found one: their crew lanes show up here.</p>` : ''}`;
+}
+
 function crewPanel() {
   if (!signer || !me?.registered) return islandPanel();
   const active = partners.filter(p => p.until >= now());
@@ -649,7 +685,8 @@ function crewPanel() {
     ${active.length ? `<h3>Active Parleys</h3><ul class="list">${active.map(p => `<li><span><b>${short(p.who)}</b><small>${tick(p.until)} left</small></span>
       <button data-act="share" data-who="${p.who}" ${same(sharedWith, p.who) ? 'disabled' : ''}>${same(sharedWith, p.who) ? 'Map shared' : 'Show their map'}</button></li>`).join('')}</ul>` : ''}
     <h3>Crew voyages</h3>
-    ${voyages.length ? `<ul class="list">${vRows}</ul>` : '<p class="muted">Plan one from a ⚓4–5 crew lane on an island.</p>'}
+    ${voyages.length ? `<ul class="list">${vRows}</ul>` : ''}
+    ${crewLanesMarkup()}
     <p class="hint">Your address (share it with crewmates): <code class="copy" data-copy="${signer.address}">${signer.address}</code></p>
   </div>`;
 }
@@ -987,6 +1024,13 @@ function onAction(el: HTMLElement) {
       shipAt = to;
       selectIsland(to);
     });
+    case 'crew-here': {
+      const n = Number(el.dataset.to);
+      selectIsland(n);
+      const dir = lanes(seed, mapSize, n).find(l => l.coop)?.dir;
+      if (dir !== undefined) { coopForm = { dir }; focusLane = dir; render(); document.querySelector(`#lane-${dir}`)?.scrollIntoView({ block: 'center' }); }
+      return;
+    }
     case 'debug-coins': return void act('Adding debug coins', () => debugCoins(BigInt(el.dataset.amount!)));
     case 'back-sea': inside = null; placing = false; pickTile = null; selectedNote = null; bubble = null; map?.leaveIsland(); render(); return;
     case 'zoom-in': map?.zoomBy(1.25); return;
@@ -1159,11 +1203,12 @@ async function boot() {
   config = await response.json();
   const required = [config.sea, config.coop, config.shipyard, config.raid, config.escrow, config.usdc];
   if (!required.every(x => isAddress(x))) throw new Error('Contract config is incomplete.');
-  [seed, mapSize, demo, coopWindow] = await Promise.all([
+  [seed, mapSize, demo, coopWindow, chargeInterval] = await Promise.all([
     read<Hex>(config.game, config.sea, seaAbi, 'worldSeed'),
     read<number>(config.game, config.sea, seaAbi, 'mapSize').then(Number),
     read<boolean>(config.game, config.sea, seaAbi, 'demoMode'),
-    read<bigint>(config.game, config.coop, coopAbi, 'window').then(Number)]);
+    read<bigint>(config.game, config.coop, coopAbi, 'window').then(Number),
+    read<bigint>(config.game, config.sea, seaAbi, 'chargeInterval').then(Number)]);
   const view = new URLSearchParams(location.search).get('captain');
   if (view && isAddress(view)) { viewAs = view; tab = 'cabinet'; }
   app.innerHTML = '<div id="sea" class="sea" aria-label="Sea map"></div><div id="ui" class="ui"></div><div id="bubble" class="bubble" role="dialog" hidden></div>';
