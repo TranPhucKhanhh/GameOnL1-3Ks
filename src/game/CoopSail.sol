@@ -48,6 +48,7 @@ contract CoopSail {
     event VoyageCancelled(uint256 indexed id);
 
     error BadVoyage();
+    error NotAtIsland();
     error NotCoopLane();
     error BadCharges();
     error WrongStatus();
@@ -63,10 +64,12 @@ contract CoopSail {
         scrambleDepth = scrambleDepth_;
     }
 
-    /// @notice Propose a co-op voyage from an island you visited. `myCharges` is your share; the partner pays the rest.
+    /// @notice Propose a co-op voyage from the island where your ship is. `myCharges` is your share; the partner pays the rest.
     function propose(address partner, uint16 from, uint8 dir, uint8 myCharges) external returns (uint256 id) {
         if (partner == msg.sender || !sea.isRegistered(partner)) revert BadVoyage();
         if (!sea.visited(msg.sender, from)) revert BadVoyage();
+        // Crew lanes, like solo lanes, leave from where the proposer's ship is moored.
+        if (sea.shipOf(msg.sender) != from) revert NotAtIsland();
         (uint16 to, uint8 cost) = sea.route(from, dir);
         if (cost < sea.COOP_MIN_COST()) revert NotCoopLane();
         uint8 max = sea.MAX_CHARGES();

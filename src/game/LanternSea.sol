@@ -52,6 +52,7 @@ contract LanternSea {
         uint32 sails;
         uint32 islandsFound;
         uint256 coins;
+        uint16 at; // island where the ship is moored; lanes leave only from here
     }
 
     struct Note {
@@ -85,10 +86,12 @@ contract LanternSea {
     event ParleyJump(address indexed captain, address indexed partner, uint16 island);
     event CoinsChanged(address indexed captain, uint256 balance);
     event GemSold(address indexed captain, uint8 gemType, uint256 count, uint256 coins);
+    event ShipMoved(address indexed captain, uint16 indexed island);
 
     error NotRegistered();
     error AlreadyRegistered();
     error NotVisited();
+    error NotAtIsland();
     error BadDirection();
     error CoopRequired();
     error NotEnoughCharges(uint8 have, uint8 need);
@@ -168,6 +171,7 @@ contract LanternSea {
         c.home = home;
         c.storedCharges = MAX_CHARGES;
         c.chargeUpdatedAt = uint64(block.timestamp);
+        c.at = home;
         homesAt[home].push(msg.sender);
         // A home that collides with an unclaimed island becomes this captain's own discovery (no coins).
         if (firstFinder[home] == address(0)) firstFinder[home] = msg.sender;
@@ -203,14 +207,29 @@ contract LanternSea {
 
     // ---------------------------------------------------------------- sailing
 
-    /// @notice Sail lane `dir` from an island you have visited. Co-op lanes must go through CoopSail.
+    /// @notice Sail lane `dir` from the island where your ship is moored. Co-op lanes must go through CoopSail.
     function sail(uint16 from, uint8 dir) external {
         if (!visited[msg.sender][from]) revert NotVisited();
+        if (captains[msg.sender].at != from) revert NotAtIsland();
         (uint16 to, uint8 cost) = route(from, dir);
         if (cost >= COOP_MIN_COST) revert CoopRequired();
         _spendCharges(msg.sender, cost);
         emit Sailed(msg.sender, from, dir, to, cost);
         _arrive(msg.sender, to, cost == 1 ? SAIL1_MIN : SAIL2_MIN, cost == 1 ? SAIL1_SPAN : SAIL2_SPAN);
+    }
+
+    /// @notice Move your ship to an island you have already visited. Free: known waters cost no charge and pay nothing.
+    /// New islands are only found by sailing a lane from where the ship is.
+    function moveTo(uint16 island) external {
+        Captain storage c = captains[msg.sender];
+        if (!c.registered) revert NotRegistered();
+        if (!visited[msg.sender][island]) revert NotVisited();
+        c.at = island;
+        emit ShipMoved(msg.sender, island);
+    }
+
+    function shipOf(address captain) external view returns (uint16) {
+        return captains[captain].at;
     }
 
     function _bumpStreak(Captain storage c) internal {
@@ -226,6 +245,8 @@ contract LanternSea {
         Captain storage c = captains[captain];
         _bumpStreak(c);
         _markVisited(captain, to);
+        c.at = to;
+        emit ShipMoved(captain, to);
         address finder = firstFinder[to];
         if (finder != address(0)) {
             emit IslandRevisited(to, captain, finder);
@@ -262,6 +283,11 @@ contract LanternSea {
         _bumpStreak(captains[b]);
         _markVisited(a, to);
         _markVisited(b, to);
+        // Both ships landed together.
+        captains[a].at = to;
+        captains[b].at = to;
+        emit ShipMoved(a, to);
+        emit ShipMoved(b, to);
         if (!fresh) {
             emit IslandRevisited(to, a, firstFinder[to]);
             return false;
@@ -400,6 +426,8 @@ contract LanternSea {
         Captain storage c = captains[msg.sender];
         _bumpStreak(c);
         _markVisited(msg.sender, island);
+        c.at = island;
+        emit ShipMoved(msg.sender, island);
         emit ParleyJump(msg.sender, partner, island);
     }
 
@@ -427,6 +455,7 @@ contract LanternSea {
         uint256 coins;
         uint256[4] gems;
         uint256 visitedCount;
+        uint16 at;
     }
 
     function captainView(address captain) external view returns (CaptainView memory v) {
@@ -444,7 +473,8 @@ contract LanternSea {
             c.islandsFound,
             c.coins,
             gemBalance[captain],
-            visitedList[captain].length
+            visitedList[captain].length,
+            c.at
         );
     }
 
