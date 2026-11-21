@@ -56,6 +56,7 @@ These run the Foundry contract suite, the frontend build, an end-to-end test on 
 - [Architecture and game rules](docs/architecture.md)
 - [Local development and phone testing](docs/local-development.md)
 - [Deploy to Fuji and your own L1 with ICM](docs/deployment.md)
+- [Demo video script (Vietnamese)](docs/demo-script.md): 3-minute run-of-show, prep checklist and judge Q&A.
 - [Testing](docs/testing.md) · [Troubleshooting](docs/troubleshooting.md)
 - [Hackathon rules check and pitch notes](docs/competition.md)
 - [References](docs/references.md)
