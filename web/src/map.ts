@@ -680,8 +680,9 @@ export class SeaMap {
       antialias: true,
       // A canvas RES times the CSS size, shown at 1/RES (Phaser's RESIZE mode only draws at CSS size).
       scale: { mode: Phaser.Scale.NONE, width: (parent.clientWidth || 360) * RES, height: (parent.clientHeight || 640) * RES, zoom: 1 / RES },
-      // Smooth mipmaps so art stays clean when the sea is zoomed out (textures are baked at power-of-two sizes).
-      render: { mipmapFilter: 'LINEAR_MIPMAP_LINEAR' },
+      // Mipmaps keep art clean when the sea is zoomed out (textures are baked at power-of-two sizes).
+      // NEAREST between mip levels: trilinear (LINEAR_MIPMAP_LINEAR) cost ~10% fps under CI's software GL.
+      render: { mipmapFilter: 'LINEAR_MIPMAP_NEAREST' },
       scene: [this.scene, this.islandScene],
       banner: false,
       input: { mouse: { preventDefaultWheel: true } }
