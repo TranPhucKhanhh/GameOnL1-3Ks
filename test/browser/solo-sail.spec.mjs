@@ -37,6 +37,7 @@ test('solo sail: captain sails from shore across the sea and lands on a new isla
     await expect(A.page.locator('#sheet button.go', { hasText: 'Set sail' })).toHaveCount(0);
     await A.page.locator('#sheet button[data-act="move"]').click();
     await expect(A.page.locator('#sheet button', { hasText: 'Go ashore' })).toBeVisible({ timeout: 20_000 });
-    await expect(A.page.locator('#sheet button.go', { hasText: 'Set sail' }).first()).toBeVisible();
+    // Back home, the lane we sailed now leads to a known island: it is a free trip, not a lantern spend.
+    await expect(A.page.locator('#sheet .lane button[data-act="move"]', { hasText: 'Sail there · free' }).first()).toBeVisible();
   });
 });

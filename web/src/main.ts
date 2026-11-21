@@ -509,7 +509,10 @@ function islandPanel() {
     const known = visited.includes(l.to);
     const dest = known ? esc(islandName(l.to)) : 'Unknown waters';
     const can = me!.charges >= l.cost && !busy;
-    const btn = l.coop
+    // Lanterns are for finding islands. A lane to an island you already know is a free trip (moveTo), solo or crew.
+    const btn = known
+      ? `<button class="go" data-act="move" data-to="${l.to}" ${busy ? 'disabled' : ''}>Sail there · free</button>`
+      : l.coop
       ? `<button data-act="coop-form" data-dir="${l.dir}" ${busy ? 'disabled' : ''}>Plan crew voyage</button>`
       : `<button class="go" data-act="sail" data-dir="${l.dir}" ${can ? '' : 'disabled'}>Set sail ⚓${l.cost}</button>`;
     const form = coopForm?.dir === l.dir ? coopFormMarkup(l.cost) : '';
@@ -887,6 +890,7 @@ function onAction(el: HTMLElement) {
     case 'register': return void act('Claiming your island', () => tx(g, config.sea, seaAbi, 'register', [], 'Claim home island'));
     case 'sail': return void act('Setting sail', async () => {
       const dir = Number(el.dataset.dir);
+      if (visited.includes(lanes(seed, mapSize, selected!)[dir].to)) throw new Error('You already know that island: sail there for free.');
       const from = selected!;
       if (from !== shipAt) throw new Error('Sail your ship to this island first: new lanes open from where it is moored.');
       const lane = lanes(seed, mapSize, from)[dir];
@@ -924,7 +928,7 @@ function onAction(el: HTMLElement) {
       return;
     case 'enter': if (selected !== null && selected === shipAt) enterIsland(selected); return;
     case 'move': return void act('Sailing', async () => {
-      const to = selected!, from = shipAt ?? me!.home;
+      const to = el.dataset.to !== undefined ? Number(el.dataset.to) : selected!, from = shipAt ?? me!.home;
       if (!visited.includes(to)) throw new Error('You can only sail to islands you have found.');
       inside = null; bubble = null;
       if (from === to) return;
