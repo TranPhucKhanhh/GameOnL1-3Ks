@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { isAddress, zeroAddress, parseAbi } from 'viem';
 import { artifact, clients } from './lib.mjs';
@@ -35,10 +35,17 @@ const config = {
 // GAME_START_BLOCK wins; else the earliest block in Forge's DeployGame receipts.
 {
   let start = process.env.GAME_START_BLOCK ? Number(process.env.GAME_START_BLOCK) : undefined;
-  const receipts = `broadcast/Deploy.s.sol/${config.game.chainId}/run-latest.json`;
-  if (start === undefined && existsSync(receipts)) {
-    const blocks = JSON.parse(readFileSync(receipts, 'utf8')).receipts.map(r => Number(r.blockNumber));
-    if (blocks.length) start = Math.min(...blocks);
+  // The run that created SEA_ADDRESS (run-latest.json may be a later Bind* run).
+  const dir = `broadcast/Deploy.s.sol/${config.game.chainId}`;
+  if (start === undefined && existsSync(dir)) {
+    for (const file of readdirSync(dir).filter(f => /^run-\d+\.json$|^run-latest\.json$/.test(f))) {
+      const run = JSON.parse(readFileSync(`${dir}/${file}`, 'utf8'));
+      const created = run.transactions?.some(t => t.transactionType === 'CREATE' && t.contractAddress?.toLowerCase() === config.sea.toLowerCase());
+      if (!created) continue;
+      const blocks = run.receipts.map(r => Number(r.blockNumber));
+      if (blocks.length) start = Math.min(...blocks);
+      break;
+    }
   }
   if (start !== undefined && Number.isSafeInteger(start) && start >= 0) config.game.startBlock = start;
   else console.warn('No GAME_START_BLOCK and no DeployGame receipts: the app will read only recent game events.');
