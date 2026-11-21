@@ -75,7 +75,8 @@ for (const { name, viewport, zoom, touch } of [
     test.use({ viewport, hasTouch: touch, deviceScaleFactor: touch ? DPR : 1 });
 
     test('map targets use the same shapes for hover and selection', async ({ page }, testInfo) => {
-      test.setTimeout(100_000);
+      // ~90 probe steps; under CI software rendering each island-view step takes about 1 s.
+      test.setTimeout(200_000);
       await setupMap(page);
       const hits = [];
       const cursor = () => page.evaluate(() => window.mapFixture.map.game.canvas.style.cursor);

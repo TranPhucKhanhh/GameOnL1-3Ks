@@ -12,8 +12,20 @@ function tex(scene: Phaser.Scene, key: string, w: number, h: number, draw: (g: G
   if (scene.textures.exists(key)) return;
   const g = scene.make.graphics({}, false);
   draw(g, TEX);
-  g.generateTexture(key, w * TEX, h * TEX);
+  bake(scene, g, key, w * TEX, h * TEX);
   g.destroy();
+}
+
+const pow2 = (n: number) => 2 ** Math.ceil(Math.log2(Math.max(1, n)));
+
+/**
+ * Save graphics as a texture on a power-of-two canvas, then trim the frame back to `w` x `h`.
+ * WebGL builds mipmaps only for power-of-two textures; without them, art shrunk by zooming out turns jagged.
+ */
+export function bake(scene: Phaser.Scene, g: G, key: string, w: number, h: number) {
+  const pw = pow2(w), ph = pow2(h);
+  g.generateTexture(key, pw, ph);
+  if (pw !== w || ph !== h) scene.textures.get(key).get().setSize(w, h, 0, 0);
 }
 
 function poly(g: G, s: number, pts: number[], fill: number, stroke = true, width = 3) {

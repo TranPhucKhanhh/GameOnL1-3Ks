@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import type { Hex } from 'viem';
 import { lanes, islandBlobs, islandName, isLand, tileDeco, islandTheme, GRID, CENTER_TILE } from './world.js';
-import { makeArt, THEMES, TEX, INK } from './art';
+import { makeArt, bake, THEMES, TEX, INK } from './art';
 
 export type MapData = {
   seed: Hex;
@@ -16,12 +16,18 @@ export type MapData = {
 };
 
 const CELL = 120;
-const MIN_ZOOM = 0.35;
-const MAX_ZOOM = 2.4;
+/**
+ * Canvas pixels per CSS pixel. Phaser draws 1:1 with CSS pixels by default, which a 2-3x phone screen
+ * upscales into blur; drawing at the screen's density (capped at 2 for phone GPUs) keeps the art sharp.
+ * Camera zoom therefore carries RES: a camera zoom of RES shows the world at 1 CSS pixel per unit.
+ */
+const RES = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+const MIN_ZOOM = 0.35 * RES;
+const MAX_ZOOM = 2.4 * RES;
 const ISLAND_TEXTURE_SIZE = 150;
 const FONT = '"Lilita One", "Arial Rounded MT Bold", Arial, sans-serif';
 const label = (size: number, extra: Phaser.Types.GameObjects.Text.TextStyle = {}): Phaser.Types.GameObjects.Text.TextStyle =>
-  ({ fontFamily: FONT, fontSize: `${size}px`, color: '#ffffff', stroke: '#3b2414', strokeThickness: Math.max(3, size / 4), resolution: 2, ...extra });
+  ({ fontFamily: FONT, fontSize: `${size}px`, color: '#ffffff', stroke: '#3b2414', strokeThickness: Math.max(3, size / 4), resolution: RES + 1, ...extra });
 
 /** Deterministic position: grid cell plus a small jitter so islands don't line up. */
 export function islandPos(island: number, mapSize: number) {
@@ -37,47 +43,61 @@ function panZoom(scene: Phaser.Scene, locked = false) {
   let pinch: { dist: number; zoom: number } | null = null;
   let moved = false;
   const input = scene.input;
+  const slop = 8 * RES; // finger wobble still counts as a tap
   input.addPointer(1);
+  // Count fingers from the browser's own touch list. Phaser's pointer.isDown can stay stuck when a phone
+  // cancels a touch mid-gesture, and then every one-finger drag was taken as a pinch (zoom only, no panning).
+  let fingers: Touch[] = [];
+  const canvas = scene.game.canvas;
+  const onTouch = (e: TouchEvent) => {
+    fingers = Array.from(e.touches);
+    if (!scene.sys.isActive()) return;
+    if (fingers.length < 2) { pinch = null; return; }
+    const r = canvas.getBoundingClientRect();
+    const [a, b] = fingers;
+    const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    const cam = scene.cameras.main;
+    drag = null;
+    moved = true;
+    if (!pinch) { if (dist > 0) pinch = { dist, zoom: cam.zoom }; return; }
+    if (locked || dist <= 0) return;
+    // Zoom around the point between the fingers, so what is under them stays under them.
+    const k = canvas.width / r.width;
+    const mx = ((a.clientX + b.clientX) / 2 - r.left) * k, my = ((a.clientY + b.clientY) / 2 - r.top) * k;
+    const before = cam.getWorldPoint(mx, my);
+    cam.setZoom(Phaser.Math.Clamp(pinch.zoom * dist / pinch.dist, MIN_ZOOM, MAX_ZOOM));
+    cam.preRender(); // refresh the matrix so the new zoom is used below
+    const after = cam.getWorldPoint(mx, my);
+    cam.scrollX += before.x - after.x;
+    cam.scrollY += before.y - after.y;
+  };
+  canvas.addEventListener('touchstart', onTouch, { passive: true });
+  for (const type of ['touchmove', 'touchend', 'touchcancel'] as const) window.addEventListener(type, onTouch, { passive: true });
   scene.events.on(Phaser.Scenes.Events.SLEEP, () => {
     drag = null;
     pinch = null;
     // The outgoing scene can sleep before Phaser sends its pointer-out event.
     input.setDefaultCursor('');
   });
-  const syncPinch = () => {
-    const p1 = input.pointer1, p2 = input.pointer2;
-    if (!p1.isDown || !p2.isDown) return false;
-    const dist = Phaser.Math.Distance.Between(p1.x, p1.y, p2.x, p2.y);
-    const cam = scene.cameras.main;
-    if (!pinch) {
-      if (dist > 0) pinch = { dist, zoom: cam.zoom };
-    } else if (!locked && dist > 0 && pinch.dist > 0) {
-      cam.setZoom(Phaser.Math.Clamp(pinch.zoom * dist / pinch.dist, MIN_ZOOM, MAX_ZOOM));
-    }
-    drag = null;
-    moved = true;
-    return true;
-  };
   input.on('pointerdown', (p: Phaser.Input.Pointer) => {
-    if (syncPinch()) return;
+    if (fingers.length >= 2 || pinch) { drag = null; moved = true; return; }
     if (drag) { moved = true; return; }
     moved = false;
     drag = { id: p.id, x: p.x, y: p.y, sx: scene.cameras.main.scrollX, sy: scene.cameras.main.scrollY };
   });
   input.on('pointermove', (p: Phaser.Input.Pointer) => {
-    if (syncPinch()) return;
+    if (fingers.length >= 2 || pinch) return;
     if (!p.isDown || drag?.id !== p.id) return;
     const dx = p.x - drag.x, dy = p.y - drag.y;
-    if (Math.abs(dx) + Math.abs(dy) > 8) moved = true;
+    if (Math.abs(dx) + Math.abs(dy) > slop) moved = true;
     if (locked) return;
     const cam = scene.cameras.main;
     cam.scrollX = drag.sx - dx / cam.zoom;
     cam.scrollY = drag.sy - dy / cam.zoom;
   });
   function release(p: Phaser.Input.Pointer, objects: Phaser.GameObjects.GameObject[] = []) {
-    if (!input.pointer1.isDown || !input.pointer2.isDown) pinch = null;
     if (drag?.id !== p.id) return;
-    const tap = !moved && Math.abs(p.x - drag.x) + Math.abs(p.y - drag.y) <= 8;
+    const tap = !moved && Math.abs(p.x - drag.x) + Math.abs(p.y - drag.y) <= slop;
     drag = null;
     // Phaser supplies the same ordered hit-test results used for hover.
     if (tap) objects[0]?.emit('maptap');
@@ -137,7 +157,7 @@ class SeaScene extends Phaser.Scene {
     this.tweens.add({ targets: this.hull, y: 5, angle: { from: -5, to: 5 }, duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
     this.tweens.add({ targets: this.bossMark, scale: 0.6, duration: 650, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
     panZoom(this);
-    this.cameras.main.setZoom(this.scale.width < 600 ? 0.95 : 1);
+    this.cameras.main.setZoom((this.scale.width / RES < 600 ? 0.95 : 1) * RES);
     if (this.data_) this.redraw();
   }
 
@@ -154,7 +174,7 @@ class SeaScene extends Phaser.Scene {
     g.fillStyle(kind === 'partner' ? 0xe9dcc0 : theme.sand); for (const b of blobs) g.fillCircle(at(b.x), at(b.y), b.r * s);
     g.fillStyle(kind === 'partner' ? 0x9fbf9a : theme.grass); for (const b of blobs) g.fillCircle(at(b.x * 0.85), at(b.y * 0.85 - 4), Math.max(4, b.r - 7) * s);
     g.fillStyle(0xffffff, 0.35).fillCircle(at(blobs[0].x - 8), at(blobs[0].y - 10), 5 * s);
-    g.generateTexture(key, size * s, size * s);
+    bake(this, g, key, size * s, size * s);
     g.destroy();
     return key;
   }
@@ -408,7 +428,7 @@ class IslandScene extends Phaser.Scene {
     const cam = this.cameras?.main;
     if (!cam) return;
     const w = this.scale.width - this.insets.right, h = this.scale.height - this.insets.top - this.insets.bottom;
-    cam.setZoom(Phaser.Math.Clamp(Math.min(w, h) / (12.6 * T), 0.3, 1.6));
+    cam.setZoom(Phaser.Math.Clamp(Math.min(w, h) / (12.6 * T), 0.3 * RES, 1.6 * RES));
     cam.centerOn(this.insets.right / 2 / cam.zoom, (this.insets.bottom - this.insets.top) / 2 / cam.zoom);
   }
 
@@ -658,11 +678,19 @@ export class SeaMap {
       parent,
       backgroundColor: '#1aa3d4',
       antialias: true,
-      scale: { mode: Phaser.Scale.RESIZE, width: parent.clientWidth || 360, height: parent.clientHeight || 640 },
+      // A canvas RES times the CSS size, shown at 1/RES (Phaser's RESIZE mode only draws at CSS size).
+      scale: { mode: Phaser.Scale.NONE, width: (parent.clientWidth || 360) * RES, height: (parent.clientHeight || 640) * RES, zoom: 1 / RES },
+      // Mipmaps keep art clean when the sea is zoomed out (textures are baked at power-of-two sizes).
+      // NEAREST between mip levels: trilinear (LINEAR_MIPMAP_LINEAR) cost ~10% fps under CI's software GL.
+      render: { mipmapFilter: 'LINEAR_MIPMAP_NEAREST' },
       scene: [this.scene, this.islandScene],
       banner: false,
       input: { mouse: { preventDefaultWheel: true } }
     });
+    new ResizeObserver(() => {
+      const w = parent.clientWidth, h = parent.clientHeight;
+      if (w && h && (w * RES !== this.game.scale.width || h * RES !== this.game.scale.height)) this.game.scale.resize(w * RES, h * RES);
+    }).observe(parent);
     // iOS Safari ignores viewport user-scalable=no; block native page pinch on the map container.
     const stopGesture = (e: Event) => e.preventDefault();
     parent.addEventListener('gesturestart', stopGesture, { passive: false });
@@ -675,9 +703,11 @@ export class SeaMap {
     if (!this.inside) return null;
     const p = this.islandScene.tileScreen(tile, centre);
     const rect = this.game.canvas?.getBoundingClientRect();
-    return p && rect ? { x: rect.left + p.x, y: rect.top + p.y } : null;
+    return p && rect ? { x: rect.left + p.x / RES, y: rect.top + p.y / RES } : null;
   }
+  /** Insets arrive in CSS pixels; the scenes work in canvas pixels. */
   setInsets(top: number, right: number, bottom: number) {
+    top *= RES; right *= RES; bottom *= RES;
     const i = this.islandScene.insets;
     const changed = i.top !== top || i.right !== right || i.bottom !== bottom;
     this.scene.insets = { top, right, bottom };
