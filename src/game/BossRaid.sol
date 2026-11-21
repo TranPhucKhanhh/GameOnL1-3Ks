@@ -45,6 +45,9 @@ contract BossRaid is CrossChainEndpoint {
     mapping(uint256 => Raid) public raids;
     mapping(uint256 => address[]) internal helperList;
     mapping(uint256 => mapping(address => uint256)) public damageOf;
+    /// The opened raid that has not been settled yet (0 if none). Only one can exist: opening a new raid
+    /// settles the previous one first.
+    uint256 public pendingRaid;
 
     event RaidProposed(uint256 indexed raidId, address indexed leadA, address indexed leadB);
     event RaidOpened(uint256 indexed raidId, address leadA, address leadB, uint16 island, uint256 hp, uint64 deadline);
@@ -93,6 +96,7 @@ contract BossRaid is CrossChainEndpoint {
 
     /// @notice Propose leading this epoch's raid with a partner. A stale, unaccepted proposal can be replaced.
     function proposeLead(address partner) external returns (uint256 raidId) {
+        _settleFinished();
         raidId = currentRaidId();
         Raid storage r = raids[raidId];
         if (partner == msg.sender || !sea.isRegistered(msg.sender) || !sea.isRegistered(partner)) revert NotCrew();
@@ -107,6 +111,7 @@ contract BossRaid is CrossChainEndpoint {
 
     /// @notice Partner accepts; the raid opens and the escrow on C-Chain is told who may fund it.
     function acceptLead(uint256 raidId) external {
+        _settleFinished();
         if (raidId != currentRaidId()) revert NotThisEpoch();
         Raid storage r = raids[raidId];
         if (r.status != Status.Proposed) revert WrongStatus();
@@ -117,6 +122,7 @@ contract BossRaid is CrossChainEndpoint {
         r.maxHp = maxHp;
         r.hp = maxHp;
         r.deadline = endsAt;
+        pendingRaid = raidId;
         _send(abi.encode(SeaMessages.RAID_OPENED, abi.encode(raidId, r.leadA, r.leadB, endsAt)));
         emit RaidOpened(raidId, r.leadA, r.leadB, island, maxHp, endsAt);
     }
@@ -128,6 +134,7 @@ contract BossRaid is CrossChainEndpoint {
         Raid storage r = raids[raidId];
         if (r.status != Status.Active) revert WrongStatus();
         if (block.timestamp >= r.deadline) revert RaidOver();
+        _settleFinished(); // an earlier raid whose boss got away
         bool lead = msg.sender == r.leadA || msg.sender == r.leadB;
         if (!lead && damageOf[raidId][msg.sender] == 0) {
             if (helperList[raidId].length >= MAX_HELPERS) revert HelpersFull();
@@ -143,10 +150,13 @@ contract BossRaid is CrossChainEndpoint {
         if (r.hp == 0) {
             r.status = Status.Defeated;
             emit BossDefeated(raidId);
+            _settle(raidId); // the killing blow pays out at once: nobody has to remember to settle
         }
     }
 
-    /// @notice Close a finished raid and tell the escrow how to pay. Anyone may call it.
+    /// @notice Close a finished raid and tell the escrow how to pay. Anyone may call it, but it is rarely needed:
+    /// the killing attack settles its raid, and the next raid's propose, accept or attack settles a raid whose
+    /// boss got away.
     function settle(uint256 raidId) external {
         Raid storage r = raids[raidId];
         if (r.settled) revert WrongStatus();
@@ -156,7 +166,29 @@ contract BossRaid is CrossChainEndpoint {
         } else if (r.status != Status.Defeated) {
             revert WrongStatus();
         }
+        _settle(raidId);
+    }
+
+    /// @dev Settle the pending raid if its boss is gone (defeated or out of time). Called at the start of raid actions.
+    function _settleFinished() internal {
+        uint256 id = pendingRaid;
+        if (id == 0) return;
+        Raid storage r = raids[id];
+        if (r.settled) {
+            pendingRaid = 0;
+            return;
+        }
+        if (r.status == Status.Active) {
+            if (block.timestamp < r.deadline) return;
+            r.status = Status.Failed;
+        }
+        _settle(id);
+    }
+
+    function _settle(uint256 raidId) internal {
+        Raid storage r = raids[raidId];
         r.settled = true;
+        if (pendingRaid == raidId) pendingRaid = 0;
         bool defeated = r.status == Status.Defeated;
         uint256 perLead;
         if (defeated) {

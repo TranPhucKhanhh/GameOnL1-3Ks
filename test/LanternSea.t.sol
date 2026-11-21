@@ -714,12 +714,12 @@ contract LanternSeaTest {
         vm.prank(alice);
         yard.upgrade(true);
         _ok(yard.crewPower(alice, bob) > crewBefore && crewBefore > 40, "PARTS_AND_UPGRADE_INCREASE_POWER");
-        vm.prank(alice);
-        raid.attack(raidId); // crew power ~1590 finishes the boss
-        _eq(uint8(raid.raidView(raidId).status), uint8(BossRaid.Status.Defeated), "DEFEATED");
-
         vm.recordLogs();
-        raid.settle(raidId);
+        vm.prank(alice);
+        raid.attack(raidId); // crew power ~1590 finishes the boss, and the same attack settles the raid
+        _eq(uint8(raid.raidView(raidId).status), uint8(BossRaid.Status.Defeated), "DEFEATED");
+        _ok(raid.raidView(raidId).settled, "KILLING_BLOW_SETTLES");
+        _eq(raid.pendingRaid(), 0, "NOTHING_PENDING");
         _toEscrow(_message(address(gameMessenger)));
         (,, uint256 coins,) = raid.bossOf(raidId);
         _eq(_coins(alice), 5000 - 2500 - 40 + coins / 2, "LEAD_A_COINS");
@@ -764,6 +764,25 @@ contract LanternSeaTest {
         _eq(escrow.claimable(bob), 35e6, "PARTNER_FULL_REFUND");
         _eq(_coins(alice), 0, "NO_BOSS_COINS");
         _solvent();
+    }
+
+    function testNextRaidSettlesAnEscapedBossWithoutAnyoneClickingSettle() public {
+        uint256 raidId = _openRaid();
+        _fund(alice, 20e6, raidId);
+        _eq(raid.pendingRaid(), raidId, "PENDING");
+        // Two boss periods pass with nobody playing; then a new lead crew forms.
+        vm.warp(RAID_TIME + 1200);
+        vm.recordLogs();
+        vm.prank(alice);
+        raid.proposeLead(bob);
+        _ok(raid.raidView(raidId).settled, "AUTO_SETTLED");
+        _eq(uint8(raid.raidView(raidId).status), uint8(BossRaid.Status.Failed), "FAILED");
+        _eq(raid.pendingRaid(), 0, "CLEARED");
+        _toEscrow(_message(address(gameMessenger)));
+        _eq(escrow.claimable(alice), 20e6, "AUTO_REFUND");
+        _solvent();
+        vm.expectRevert(BossRaid.WrongStatus.selector);
+        raid.settle(raidId);
     }
 
     function testEscrowExpiresIfSettleNeverArrives() public {

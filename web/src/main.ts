@@ -724,7 +724,7 @@ function raidPanel() {
     ${actions}
     ${helpers.length ? `<h3>Damage</h3><ul class="list">${helpers.map(h => `<li><span><b>${name(h.who)}</b><small>helper · ${r.totalDamage > 0n ? Number((h.dmg * 1000n) / r.totalDamage) / 10 : 0}% of damage</small></span><b>${h.dmg}</b></li>`).join('')}</ul>` : ''}
     ${myDamage > 0n ? `<p>Your damage: <b>${myDamage}</b></p>` : ''}
-    ${lastRaid ? `<p>Last raid (${RAID_STATUS[lastRaid.view.status]}) is not settled.</p><button data-act="settle-last">Settle last raid</button>` : ''}
+    ${lastRaid ? `<p>Last raid (${RAID_STATUS[lastRaid.view.status]}) is not settled yet. It settles by itself with the next raid's first move; settle now to pay out sooner.</p><button data-act="settle-last">Settle last raid</button>` : ''}
     ${claimable > 0n ? `<button class="primary wide" data-act="claim">Claim ${usd(claimable)} USDC on C-Chain</button>` : ''}
     <p class="hint">No sponsor pool and no yield: every USDC paid out was put in by that raid's lead crew. Coins never convert to money.</p>
   </div>`;
