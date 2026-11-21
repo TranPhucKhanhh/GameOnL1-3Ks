@@ -11,8 +11,10 @@ try {
   const env = { ...process.env, DEPLOYER: accounts[0], GAME_CHAIN_ID: '202611', DEMO_MODE: 'true', MAP_SIZE: '256',
     WORLD_SEED: worldSeed, GAME_BLOCKCHAIN_ID: config.game.blockchainId, ESCROW_BLOCKCHAIN_ID: config.vault.blockchainId,
     GAME_MESSENGER: config.game.messenger, ESCROW_MESSENGER: config.vault.messenger, USDC_ADDRESS: config.usdc };
+  // --slow sends one transaction at a time and waits for each receipt: broadcasting them all at once
+  // occasionally stalled forever against Anvil in CI. Each call gets 2 minutes so a stall fails fast.
   const forge = (script, rpc, extra = {}) => run('forge', ['script', `script/Deploy.s.sol:${script}`, '--rpc-url', rpc,
-    '--sender', accounts[0], '--unlocked', '--broadcast'], { env: { ...env, ...extra } });
+    '--sender', accounts[0], '--unlocked', '--broadcast', '--slow'], { env: { ...env, ...extra }, timeout: 120_000 });
   forge('DeployEscrow', config.vault.rpcUrl);
   forge('DeployGame', config.game.rpcUrl);
   const created = (id, name) => JSON.parse(readFileSync(`broadcast/Deploy.s.sol/${id}/run-latest.json`, 'utf8')).transactions
