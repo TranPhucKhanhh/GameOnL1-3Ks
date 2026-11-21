@@ -78,7 +78,8 @@ function syncShip() {
   const before = shipAt;
   shipAt = me?.registered ? Number(me.at) : null;
   // A visit ended (Parley or raid over): the chain already has the ship back home. Leave that island's view.
-  if (before !== null && shipAt !== before && !visited.includes(before) && me?.visitUntil === 0n) {
+  // Not while one of our own actions runs: sailing away from a visit yourself is not the timer running out.
+  if (!busy && before !== null && shipAt !== before && shipAt === me?.home && !visited.includes(before) && me?.visitUntil === 0n) {
     if (inside === before) { inside = null; bubble = null; map?.leaveIsland(); }
     if (selected === before) selected = shipAt;
     notice = `Your visit ended, so your ship sailed home to ${islandName(shipAt ?? 0)}.`;
