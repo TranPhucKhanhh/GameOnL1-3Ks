@@ -18,12 +18,25 @@ test('solo sail: captain sails from shore across the sea and lands on a new isla
     await expect(A.page.locator('.backsea')).toBeHidden({ timeout: 20_000 });
     await A.page.screenshot({ path: 'test-results/lantern-phone-sailing.png' });
 
-    await expect(A.page.locator('.backsea')).toBeVisible({ timeout: 20_000 });
+    // Landing keeps the captain at sea on the new island's card; going ashore is a separate tap.
     await expect(A.page.locator('#sheet h2').first()).not.toHaveText(fromName, { timeout: 20_000 });
     await expect(A.page.locator('#sheet .badge').first()).toBeVisible({ timeout: 20_000 });
+    await expect(A.page.locator('.backsea')).toBeHidden();
+    await expect(A.page.locator('#sheet button', { hasText: 'Go ashore' })).toBeVisible();
+    await A.page.locator('#sheet button', { hasText: 'Go ashore' }).click();
+    await expect(A.page.locator('.backsea')).toBeVisible();
     await A.page.screenshot({ path: 'test-results/lantern-phone-island2.png' });
-
     await A.page.locator('.backsea').click();
     await expect(A.page.locator('.backsea')).toBeHidden();
+
+    // Away from the ship, the home island offers "Sail to" instead of lanes or going ashore.
+    const home = await A.page.evaluate(() => window.__lantern.map.game.scene.getScene('sea').data_.home);
+    await A.page.evaluate(n => window.__lantern.map.game.scene.getScene('sea').onSelect(n), home);
+    await expect(A.page.locator('#sheet h2').first()).toHaveText(fromName);
+    await expect(A.page.locator('#sheet button', { hasText: 'Go ashore' })).toHaveCount(0);
+    await expect(A.page.locator('#sheet button.go', { hasText: 'Set sail' })).toHaveCount(0);
+    await A.page.locator('#sheet button[data-act="move"]').click();
+    await expect(A.page.locator('#sheet button', { hasText: 'Go ashore' })).toBeVisible({ timeout: 20_000 });
+    await expect(A.page.locator('#sheet button.go', { hasText: 'Set sail' }).first()).toBeVisible();
   });
 });

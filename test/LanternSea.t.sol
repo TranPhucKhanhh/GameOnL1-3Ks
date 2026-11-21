@@ -202,8 +202,10 @@ contract LanternSeaTest {
         sea.sail(home, dir);
         uint256 before = _coins(cap);
         vm.warp(block.timestamp + 10 minutes); // recharge
-        vm.prank(cap);
+        vm.startPrank(cap);
+        sea.moveTo(home); // free trip back through known waters
         sea.sail(home, dir);
+        vm.stopPrank();
         _eq(_coins(cap), before, "NO_SECOND_REWARD");
         _ok(sea.firstFinder(to) != address(0), "CLAIMED");
     }
@@ -216,8 +218,10 @@ contract LanternSeaTest {
         // Sail on consecutive demo "days" (5 minutes each); streak should climb and cap at 5.
         for (uint256 i = 0; i < 6; i++) {
             vm.warp(block.timestamp + 5 minutes);
-            vm.prank(cap);
+            vm.startPrank(cap);
+            sea.moveTo(home);
             sea.sail(home, dir);
+            vm.stopPrank();
         }
         _ok(sea.captainView(cap).streak >= 5, "STREAK_CLIMBS");
         vm.warp(block.timestamp + 20 minutes);
@@ -230,7 +234,10 @@ contract LanternSeaTest {
         (, uint8 cost) = sea.route(home, dir);
         vm.startPrank(cap);
         sea.sail(home, dir);
-        if (cost == 1) sea.sail(home, dir);
+        if (cost == 1) {
+            sea.moveTo(home);
+            sea.sail(home, dir);
+        }
         vm.stopPrank();
         (uint8 c,) = sea.chargesOf(cap);
         _eq(c, 1, "ONE_LEFT");
@@ -254,6 +261,39 @@ contract LanternSeaTest {
         vm.prank(cap);
         vm.expectRevert(LanternSea.BadDirection.selector);
         sea.sail(home, 9);
+    }
+
+    function testShipMovesWithSailsAndLanesLeaveOnlyFromIt() public {
+        (address cap, uint8 dir) = _captainWithLane(false, 0);
+        uint16 home = sea.homeOf(cap);
+        _eq(sea.shipOf(cap), home, "STARTS_HOME");
+        (uint16 to,) = sea.route(home, dir);
+        vm.startPrank(cap);
+        sea.sail(home, dir);
+        _eq(sea.shipOf(cap), to, "SHIP_AT_NEW_ISLAND");
+        _eq(sea.captainView(cap).at, to, "VIEW_AT");
+        vm.warp(block.timestamp + 10 minutes);
+        // Home is visited, but the ship is elsewhere: no sailing from it until the ship moves back.
+        vm.expectRevert(LanternSea.NotAtIsland.selector);
+        sea.sail(home, dir);
+        (uint8 chargesBefore,) = sea.chargesOf(cap);
+        uint256 coinsBefore = _coins(cap);
+        sea.moveTo(home);
+        _eq(sea.shipOf(cap), home, "MOVED_HOME");
+        (uint8 chargesAfter,) = sea.chargesOf(cap);
+        _eq(chargesAfter, chargesBefore, "MOVE_IS_FREE");
+        _eq(_coins(cap), coinsBefore, "MOVE_PAYS_NOTHING");
+        sea.sail(home, dir);
+        // Only known islands are reachable by moving.
+        uint16 unknown = uint16((uint256(to) + 1) % 256);
+        if (!sea.visited(cap, unknown)) {
+            vm.expectRevert(LanternSea.NotVisited.selector);
+            sea.moveTo(unknown);
+        }
+        vm.stopPrank();
+        vm.prank(bob);
+        vm.expectRevert(LanternSea.NotRegistered.selector);
+        sea.moveTo(home);
     }
 
     function testModuleHooksAreLocked() public {
@@ -296,6 +336,7 @@ contract LanternSeaTest {
         (uint8 status,) = _started(id);
         _eq(status, uint8(CoopSail.Status.Landed), "LANDED");
         _ok(sea.visited(a, to) && sea.visited(b, to), "BOTH_VISITED");
+        _ok(sea.shipOf(a) == to && sea.shipOf(b) == to, "BOTH_SHIPS_LANDED");
         uint8 gem = sea.gemTypeOf(to);
         _eq(sea.captainView(a).gems[gem], 1, "GEM_A");
         _eq(sea.captainView(b).gems[gem], 1, "GEM_B");
@@ -305,6 +346,12 @@ contract LanternSeaTest {
 
         (,, uint16 from,, uint8 dir,,,,,,,) = coop.voyages(id);
         vm.warp(block.timestamp + 3 minutes);
+        // The crew lane leaves from where the proposer's ship is: it landed at `to`, so it must move back first.
+        vm.prank(a);
+        vm.expectRevert(CoopSail.NotAtIsland.selector);
+        coop.propose(b, from, dir, 2);
+        vm.prank(a);
+        sea.moveTo(from);
         vm.prank(a);
         uint256 repeat = coop.propose(b, from, dir, 2);
         vm.prank(b);

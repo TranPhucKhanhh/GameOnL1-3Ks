@@ -303,6 +303,11 @@
             "name": "visitedCount",
             "type": "uint256",
             "internalType": "uint256"
+          },
+          {
+            "name": "at",
+            "type": "uint16",
+            "internalType": "uint16"
           }
         ]
       }
@@ -702,6 +707,19 @@
   },
   {
     "type": "function",
+    "name": "moveTo",
+    "inputs": [
+      {
+        "name": "island",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "noteCount",
     "inputs": [
       {
@@ -977,6 +995,25 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "shipOf",
+    "inputs": [
+      {
+        "name": "captain",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -1370,6 +1407,25 @@
     "anonymous": false
   },
   {
+    "type": "event",
+    "name": "ShipMoved",
+    "inputs": [
+      {
+        "name": "captain",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "island",
+        "type": "uint16",
+        "indexed": true,
+        "internalType": "uint16"
+      }
+    ],
+    "anonymous": false
+  },
+  {
     "type": "error",
     "name": "AlreadyNoted",
     "inputs": []
@@ -1417,6 +1473,11 @@
   {
     "type": "error",
     "name": "NoActiveParley",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotAtIsland",
     "inputs": []
   },
   {

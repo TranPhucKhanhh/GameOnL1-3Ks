@@ -4,7 +4,7 @@
 
 | Command | What it proves |
 | --- | --- |
-| `npm run test:contracts` | Foundry checks sailing, notes, Parley signatures, co-op charge splits, fresh and repeat landings, cancellation, gem sales, gear, and raid payouts and refunds. It also checks the combined funding cap, escrow solvency, message authentication and out-of-order raid messages. |
+| `npm run test:contracts` | Foundry checks sailing (lanes only from the island where the ship is moored, free moves between known islands), notes, Parley signatures, co-op charge splits, fresh and repeat landings, cancellation, gem sales, gear, and raid payouts and refunds. It also checks the combined funding cap, escrow solvency, message authentication and out-of-order raid messages. |
 | `npm run check` | Repository lint, contract tests, ABI sync, TypeScript check and the production build. |
 | `npm run test:e2e` | Two Anvil chains plus the mock relayer. Checks browser geometry against the contract, solo and co-op voyages, a Parley signature and a raid round trip with both funders, the combined cap, a helper attack, previous-epoch settlement and both refunds claimed. |
 | `npm run test:deploy` | Runs the real Forge `DeployGame` / `DeployEscrow` / `Bind*` scripts on disposable chains with IDs 202611 and 43113, and checks the wiring. |

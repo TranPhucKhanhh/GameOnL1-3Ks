@@ -4,11 +4,12 @@ A co-op pirate exploration game on **your own Avalanche L1**, with raid bounties
 
 Every captain gets a home island, three sailing charges and a sea that nobody has mapped yet.
 
-- **Explore:** each island shows 1–4 sea lanes. You see each lane's direction and cost (⚓1 or ⚓2), but not where it leads. Every island you reach opens new lanes.
+- **Explore:** each island shows 1–4 sea lanes. You see each lane's direction and cost (⚓1 or ⚓2), but not where it leads. Lanes leave only from the island where your ship is moored (the contract enforces this). Every island you reach opens new lanes, and **Sail to** moves the ship between islands you already know for no charge.
 - **Crew lanes:** these cost ⚓4–5, more than one captain can hold, so two captains must pool charges. Then both must solve a 4×4 sliding puzzle within 60 seconds of joining. When a crew lands on an unclaimed island, each captain earns a gem.
 - **Collisions:** the sea is a small hash space on purpose. You will stumble onto other captains' islands and bases.
-- **Go ashore:** tap any island to walk its hash-generated land. Build a note pole for 25 coins: the first pole stands in the centre, and later ones go on any free spot you pick. Tap a pole to read it.
+- **Go ashore:** on the island where your ship is, tap **Go ashore** to walk its hash-generated land. Build a note pole for 25 coins: the first pole stands in the centre, and later ones go on any free spot you pick. Tap a pole to read it.
 - **Parley:** meet in person and scan each other's QR code. For a while your maps are shared, and you can jump to any of your crewmate's islands for ⚓1.
+- **Debug coins (local demo only):** Help → Debug adds 100 or 1000 free in-game coins on the local chain.
 - **Ship:** five part slots and two upgradable stats, damage and multiplier. Parts can add damage, add multiplier, or multiply total power.
 - **Boss raids:** a co-op crew leads a time-limited boss raid. They can escrow test USDC on C-Chain as a bounty. Helpers spend charges to attack. If the boss falls, helpers are paid by damage share, and the rest goes back to the crew.
 

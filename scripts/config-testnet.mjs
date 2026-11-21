@@ -23,7 +23,7 @@ function blockchainID(name) {
 const config = {
   mode: 'fuji-icm',
   demoMode: process.env.DEMO_MODE !== 'false',
-  game: { chainId: Number(required('GAME_CHAIN_ID')), name: 'Lantern Sea L1', symbol: process.env.GAME_GAS_SYMBOL || 'TIDE',
+  game: { chainId: Number(required('GAME_CHAIN_ID')), name: process.env.GAME_CHAIN_NAME || 'Lantern Sea L1', symbol: process.env.GAME_GAS_SYMBOL || 'TIDE',
     rpcUrl: required('GAME_RPC_URL'), blockchainId: blockchainID('GAME_BLOCKCHAIN_ID'), messenger: address('GAME_MESSENGER'),
     ...(process.env.GAME_EXPLORER_URL ? { explorerUrl: process.env.GAME_EXPLORER_URL } : {}) },
   vault: { chainId: 43113, name: 'Avalanche Fuji C-Chain', symbol: 'AVAX', rpcUrl: required('FUJI_RPC_URL'),
